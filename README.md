@@ -24,13 +24,13 @@
 <table>
   <tr>
     <td align="center"><img src="docs/screenshots/start.jpg" width="200" alt="Start screen"><br><sub>Choose Player 1 or Player 2</sub></td>
-    <td align="center"><img src="docs/screenshots/levelboy.jpg" width="200" alt="Gameplay"><br><sub>Ten pixel-art levels</sub></td>
+    <td align="center"><img src="docs/screenshots/level_boy.jpg" width="200" alt="Gameplay"><br><sub>Ten pixel-art levels</sub></td>
     <td align="center"><img src="docs/screenshots/shop.jpg" width="200" alt="Shop"><br><sub>Shop menu</sub></td>
     <td align="center"><img src="docs/screenshots/invitation.jpg" width="200" alt="Invitation code"><br><sub>The boy's invitation code</sub></td>
   </tr>
   <tr>
     <td align="center"><img src="docs/screenshots/code-entry.png" width="200" alt="Enter code"><br><sub>She enters the code</sub></td>
-    <td align="center"><img src="docs/screenshots/levelgirl.jpg" width="200" alt="Gameplay"><br><sub>Ten pixel-art levels</sub></td>
+    <td align="center"><img src="docs/screenshots/level_girl.jpg" width="200" alt="Gameplay"><br><sub>Ten pixel-art levels</sub></td>
     <td align="center"><img src="docs/screenshots/reunion.jpg" width="200" alt="Reunion"><br><sub>She finds him at the flag</sub></td>
     <td align="center"><img src="docs/screenshots/ending.jpg" width="200" alt="Ending"><br><sub>Together Forever</sub></td>
   </tr>
