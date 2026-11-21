@@ -3,31 +3,38 @@ using UnityEngine;
 
 // Plain data describing one level. LevelManager turns this into GameObjects.
 public class GroundSeg { public float x0, x1, top; }
-public class PlatformSeg { public float x0, x1, top; }
-public class EnemySpawn { public float x, y, minX, maxX, speed; }
-public class SpikeSpawn { public float x, y; }
+public class BlockSpawn { public float x, y; public BlockType type; public BlockContent content; }
+public class PipeSpawn { public float x, top, height; public bool plant; }   // x = centre
+public class StairSpawn { public float x0, top; public int steps; }
+public class EnemySpawn { public float x, y, speed; public EnemyKind kind; public int variant; }
 
 public class LevelData
 {
     public readonly List<GroundSeg> grounds = new List<GroundSeg>();
-    public readonly List<PlatformSeg> platforms = new List<PlatformSeg>();
-    public readonly List<Vector2> coins = new List<Vector2>();
+    public readonly List<BlockSpawn> blocks = new List<BlockSpawn>();
+    public readonly List<PipeSpawn> pipes = new List<PipeSpawn>();
+    public readonly List<StairSpawn> stairs = new List<StairSpawn>();
     public readonly List<EnemySpawn> enemies = new List<EnemySpawn>();
-    public readonly List<SpikeSpawn> spikes = new List<SpikeSpawn>();
-    public Vector2 startPos;   // feet position of the player spawn
+    public readonly List<Vector2> coins = new List<Vector2>();   // coins (boy) / flowers (girl)
+    public Vector2 startPos;   // feet position of the spawn
+    public float plazaStart;   // start of the final flat plaza
     public float flagX;        // x of the end flag
+    public float castleX;      // x of the castle behind the flag
     public float flagTop;      // ground height at the flag
     public float endX;         // right edge of the level
 }
 
 /// <summary>
 /// Deterministic procedural generator: the same level number always gives the same level.
-/// Difficulty (gap size/frequency, enemies, spikes) ramps from level 1 to level 10.
-/// Jump physics in PlayerController2D: height ~2.7 units, distance ~5 units, so gaps are
-/// capped at 3 units and steps at 1 unit. Every level is therefore completable.
+/// Difficulty ramps from level 1 to level 10: wider gaps, more cats and turtles, pipes with
+/// piranha plants, brick stairs. Jump physics in PlayerController2D (height about 2.7 units,
+/// distance about 5 units) are respected: gaps are capped at 3 units and steps at 1 unit,
+/// pipes are at most 2 units tall, so every level can be completed.
 /// </summary>
 public static class LevelGenerator
 {
+    static int totalCoins = -1;
+
     public static LevelData Generate(int level)
     {
         var rnd = new System.Random(4242 + level * 7919);
@@ -38,10 +45,17 @@ public static class LevelGenerator
 
         float x = 0f, top = 0f;
 
-        // Safe starting area
-        AddGround(d, x, x + 10f, top);
+        // Safe starting area with the first row of blocks (a power-up block for the girl)
+        AddGround(d, 0f, 12f, top);
         d.startPos = new Vector2(2f, top);
-        x += 10f;
+        d.blocks.Add(new BlockSpawn { x = 6.5f, y = top + 3.5f, type = BlockType.Brick, content = BlockContent.None });
+        d.blocks.Add(new BlockSpawn { x = 7.5f, y = top + 3.5f, type = BlockType.Question, content = BlockContent.Power });
+        d.blocks.Add(new BlockSpawn { x = 8.5f, y = top + 3.5f, type = BlockType.Brick, content = BlockContent.None });
+        for (int i = 0; i < 4; i++) d.coins.Add(new Vector2(3f + i, top + 1.3f));
+        x = 12f;
+
+        float prevX1 = 12f, prevTop = 0f;
+        bool prevTailClear = false;
 
         while (x < targetLength)
         {
@@ -55,10 +69,17 @@ public static class LevelGenerator
             else if (roll == 3) newTop -= 1f;
             newTop = Mathf.Clamp(newTop, 0f, 2f);
 
+            bool stairs = false;
+            if (gap > 0f && prevTailClear && level >= 3 && rnd.NextDouble() < 0.40)
+            {
+                d.stairs.Add(new StairSpawn { x0 = prevX1 - 3f, top = prevTop, steps = 3 });
+                stairs = true;
+            }
+
             if (gap > 0f)
             {
-                // a little arc of coins to show the player where to jump
-                float h = Mathf.Max(top, newTop) + 2.0f;
+                // an arc of coins that shows where to jump
+                float h = Mathf.Max(top, newTop) + 2.0f + (stairs ? 1.5f : 0f);
                 for (int i = 1; i <= 3; i++)
                     d.coins.Add(new Vector2(x + gap * i / 4f, h + (i == 2 ? 0.4f : 0f)));
             }
@@ -66,21 +87,47 @@ public static class LevelGenerator
             x += gap;
             float w = rnd.Next(5, 10); // 5..9
             AddGround(d, x, x + w, newTop);
-            Decorate(d, rnd, x, x + w, newTop, level, diff);
+            prevTailClear = Decorate(d, rnd, x, x + w, newTop, level, diff) && w >= 6f;
+            prevX1 = x + w;
+            prevTop = newTop;
             x += w;
             top = newTop;
         }
 
-        // End plaza (flat) with the flag
-        float plazaStart = x;
-        AddGround(d, plazaStart, plazaStart + 18f, top);
-        d.flagX = plazaStart + 14f;
+        // Final plaza (flat): flag, castle, the place where the boy waits
+        d.plazaStart = x;
+        AddGround(d, x, x + 18f, top);
+        d.flagX = x + 11f;
+        d.castleX = x + 15.5f;
         d.flagTop = top;
-        d.endX = plazaStart + 18f;
-        for (int i = 0; i < 5; i++)
-            d.coins.Add(new Vector2(plazaStart + 3f + i, top + 1.3f));
+        d.endX = x + 18f;
+        for (int i = 0; i < 5; i++) d.coins.Add(new Vector2(x + 2.5f + i, top + 1.3f));
 
         return d;
+    }
+
+    /// <summary>Coins the boy can collect in one level (coin blocks count 1, power blocks 3).</summary>
+    public static int CoinsIn(LevelData d)
+    {
+        int n = d.coins.Count;
+        foreach (var b in d.blocks)
+        {
+            if (b.content == BlockContent.Coin) n += 1;
+            else if (b.content == BlockContent.Power) n += 3;
+        }
+        return n;
+    }
+
+    /// <summary>All coins in the whole game (used to price the rings so they are always fair).</summary>
+    public static int TotalCoins()
+    {
+        if (totalCoins < 0)
+        {
+            int sum = 0;
+            for (int l = 1; l <= LevelManager.TotalLevels; l++) sum += CoinsIn(Generate(l));
+            totalCoins = sum;
+        }
+        return totalCoins;
     }
 
     static void AddGround(LevelData d, float x0, float x1, float top)
@@ -97,39 +144,80 @@ public static class LevelGenerator
         d.grounds.Add(new GroundSeg { x0 = x0, x1 = x1, top = top });
     }
 
-    static void Decorate(LevelData d, System.Random rnd, float x0, float x1, float top, int level, float diff)
+    /// <summary>Fills one ground run. Returns true if the last 3.5 units of the run are free (room for stairs).</summary>
+    static bool Decorate(LevelData d, System.Random rnd, float x0, float x1, float top, int level, float diff)
     {
         float w = x1 - x0;
-        float mid = (x0 + x1) / 2f;
-        bool hazard = false;
+        float mid = (x0 + x1) * 0.5f;
+        bool pipe = false;
+        float pipeX = mid;
+        float blockEnd = x0;
 
-        if (level >= 2 && w >= 6f && rnd.NextDouble() < 0.20 + 0.50 * diff)
+        // pipe (with a piranha plant from level 3)
+        if (level >= 2 && w >= 8f && rnd.NextDouble() < 0.20 + 0.35 * diff)
         {
-            d.enemies.Add(new EnemySpawn
-            {
-                x = mid, y = top, minX = x0 + 1.2f, maxX = x1 - 1.2f,
-                speed = 1.4f + 1.8f * diff
-            });
-            hazard = true;
+            float h = rnd.Next(1, 3);
+            pipeX = x0 + 3f + Mathf.Floor((float)rnd.NextDouble() * (w - 6f));
+            d.pipes.Add(new PipeSpawn { x = pipeX, top = top, height = h, plant = level >= 3 && rnd.NextDouble() < 0.75 });
+            pipe = true;
         }
-        else if (level >= 3 && w >= 7f && rnd.NextDouble() < 0.15 + 0.40 * diff)
+
+        // a row of bricks / question blocks you can hit from below
+        if (!pipe && w >= 5f && rnd.NextDouble() < 0.55)
         {
-            int n = (level >= 6 && rnd.NextDouble() < 0.5) ? 2 : 1;
+            int n = rnd.Next(2, Mathf.Min(5, (int)w - 2) + 1);
+            float bx = x0 + 1.5f + Mathf.Floor((float)rnd.NextDouble() * (w - 3f - n + 1f));
+            bool anyQuestion = false;
             for (int i = 0; i < n; i++)
-                d.spikes.Add(new SpikeSpawn { x = mid - (n - 1) * 0.5f + i, y = top });
-            hazard = true;
+            {
+                var b = new BlockSpawn { x = bx + i + 0.5f, y = top + 3.5f, type = BlockType.Brick, content = BlockContent.None };
+                if (rnd.NextDouble() < 0.35 || (i == n / 2 && !anyQuestion && i == n - 1))
+                {
+                    b.type = BlockType.Question;
+                    b.content = rnd.NextDouble() < 0.65 ? BlockContent.Coin : BlockContent.Power;
+                    anyQuestion = true;
+                }
+                d.blocks.Add(b);
+            }
+            if (!anyQuestion)
+            {
+                var mb = d.blocks[d.blocks.Count - 1 - n / 2];
+                mb.type = BlockType.Question;
+                mb.content = BlockContent.Coin;
+            }
+            blockEnd = bx + n;
         }
 
-        if (rnd.NextDouble() < 0.75)
+        // cats and turtles
+        if (w >= 6f && rnd.NextDouble() < 0.25 + 0.50 * diff)
+        {
+            int count = (w >= 8f && level >= 5 && !pipe && rnd.NextDouble() < 0.4) ? 2 : 1;
+            for (int i = 0; i < count; i++)
+            {
+                float ex = count == 1 ? mid : (i == 0 ? x0 + 2.0f : x1 - 2.0f);
+                if (pipe) ex = pipeX > mid ? x0 + 2.0f : x1 - 2.0f;
+                bool turtle = level >= 2 && rnd.NextDouble() < 0.25 + 0.30 * diff;
+                d.enemies.Add(new EnemySpawn
+                {
+                    x = ex, y = top,
+                    kind = turtle ? EnemyKind.Turtle : EnemyKind.Cat,
+                    variant = rnd.Next(4),
+                    speed = (1.3f + 1.4f * diff) * (turtle ? 0.8f : 1f)
+                });
+            }
+        }
+
+        // coins (boy) / flowers (girl)
+        if (rnd.NextDouble() < 0.80)
         {
             int n = rnd.Next(3, 6);
             for (int i = 0; i < n; i++)
             {
-                if (hazard)
+                if (pipe)
                 {
-                    // arc over the hazard
-                    float t = n == 1 ? 0f : (i - (n - 1) / 2f) / ((n - 1) / 2f); // -1..1
-                    d.coins.Add(new Vector2(mid + (i - (n - 1) / 2f) * 0.9f, top + 1.0f + 1.6f * (1f - t * t)));
+                    float t = n == 1 ? 0f : (i - (n - 1) / 2f) / ((n - 1) / 2f);
+                    float h = d.pipes[d.pipes.Count - 1].height;
+                    d.coins.Add(new Vector2(pipeX + (i - (n - 1) / 2f) * 0.9f, top + h + 0.9f + 1.4f * (1f - t * t)));
                 }
                 else
                 {
@@ -138,14 +226,6 @@ public static class LevelGenerator
             }
         }
 
-        if (x0 > 14f && w >= 6f && rnd.NextDouble() < 0.30 + 0.20 * diff)
-        {
-            int pw = rnd.Next(2, 4);
-            float px0 = x0 + 1.5f + (float)rnd.NextDouble() * Mathf.Max(0f, w - 3f - pw);
-            float ptop = top + 2.0f;
-            d.platforms.Add(new PlatformSeg { x0 = px0, x1 = px0 + pw, top = ptop });
-            d.coins.Add(new Vector2(px0 + pw * 0.3f, ptop + 0.9f));
-            d.coins.Add(new Vector2(px0 + pw * 0.7f, ptop + 0.9f));
-        }
+        return !pipe && blockEnd <= x1 - 3.5f;
     }
 }

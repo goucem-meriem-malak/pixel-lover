@@ -12,7 +12,8 @@ using Firebase.Database;
 /// Room creation / verification on Firebase Realtime Database.
 ///
 /// Database layout (one node per room, key = the 6-character code):
-///   rooms/LOVE2D = { "roomCode": "LOVE2D", "boyFinished": true, "createdAt": <server timestamp> }
+///   rooms/LOVE2D = { "roomCode": "LOVE2D", "boyFinished": true, "createdAt": <server timestamp>,
+///                    "boyName": "ADAM", "ringId": 3 }
 ///
 /// MODES
 ///  * FIREBASE_ENABLED defined (Player Settings > Scripting Define Symbols) + Firebase Unity SDK
@@ -31,7 +32,7 @@ public class FirebaseManager : MonoBehaviour
 #endif
 
     [Tooltip("Only needed if google-services.json has no firebase_url, e.g. https://YOUR-PROJECT-default-rtdb.firebaseio.com")]
-    public string databaseUrl = "https://pixel-lover-default-rtdb.europe-west1.firebasedatabase.app/";
+    public string databaseUrl = "";
 
     [Tooltip("Seconds before a database call is treated as failed (no internet).")]
     public float timeoutSeconds = 12f;
@@ -88,14 +89,14 @@ public class FirebaseManager : MonoBehaviour
 
     // ------------------------------------------------------------------ public API
 
-    /// <summary>Boy finished level 10: create rooms/{code}. callback(success, code, errorMessage)</summary>
-    public void CreateRoom(Action<bool, string, string> callback)
+    /// <summary>Boy finished level 10 and chose a ring: create rooms/{code}. callback(success, code, errorMessage)</summary>
+    public void CreateRoom(string boyName, int ringId, Action<bool, string, string> callback)
     {
-        StartCoroutine(CreateRoomRoutine(callback));
+        StartCoroutine(CreateRoomRoutine(NameUtil.Clean(boyName, "KNIGHT"), ringId, callback));
     }
 
-    /// <summary>Girl enters a code: callback(valid, messageForPlayer)</summary>
-    public void VerifyRoom(string rawCode, Action<bool, string> callback)
+    /// <summary>Girl enters a code: callback(valid, messageForPlayer, roomInfoOrNull)</summary>
+    public void VerifyRoom(string rawCode, Action<bool, string, RoomInfo> callback)
     {
         StartCoroutine(VerifyRoomRoutine(NormalizeCode(rawCode), callback));
     }
@@ -162,7 +163,7 @@ public class FirebaseManager : MonoBehaviour
 
     void Start() { StartCoroutine(EnsureInitialised(msg => { })); }
 
-    IEnumerator CreateRoomRoutine(Action<bool, string, string> callback)
+    IEnumerator CreateRoomRoutine(string boyName, int ringId, Action<bool, string, string> callback)
     {
         string initError = null;
         yield return EnsureInitialised(m => initError = m);
@@ -188,7 +189,9 @@ public class FirebaseManager : MonoBehaviour
             {
                 { "roomCode", code },
                 { "boyFinished", true },
-                { "createdAt", ServerValue.Timestamp }
+                { "createdAt", ServerValue.Timestamp },
+                { "boyName", boyName },
+                { "ringId", ringId }
             };
             var setTask = rooms.Child(code).SetValueAsync(data);
             yield return WaitFor(setTask, t => timedOut = t);
@@ -205,30 +208,43 @@ public class FirebaseManager : MonoBehaviour
         callback(false, null, "Could not find a free invitation code. Please retry.");
     }
 
-    IEnumerator VerifyRoomRoutine(string code, Action<bool, string> callback)
+    IEnumerator VerifyRoomRoutine(string code, Action<bool, string, RoomInfo> callback)
     {
-        if (!IsWellFormed(code)) { callback(false, "A code has 6 letters/numbers."); yield break; }
+        if (!IsWellFormed(code)) { callback(false, "A code has 6 letters/numbers.", null); yield break; }
 
         string initError = null;
         yield return EnsureInitialised(m => initError = m);
-        if (!IsReady) { callback(false, initError ?? "Firebase is not ready."); yield break; }
+        if (!IsReady) { callback(false, initError ?? "Firebase is not ready.", null); yield break; }
 
         var getTask = rooms.Child(code).GetValueAsync();
         bool timedOut = false;
         yield return WaitFor(getTask, t => timedOut = t);
-        if (timedOut) { callback(false, "No connection to the server. Check your internet."); yield break; }
+        if (timedOut) { callback(false, "No connection to the server. Check your internet.", null); yield break; }
         if (getTask.IsFaulted)
         {
-            callback(false, "Database error: " + getTask.Exception.GetBaseException().Message);
+            callback(false, "Database error: " + getTask.Exception.GetBaseException().Message, null);
             yield break;
         }
 
         DataSnapshot snap = getTask.Result;
-        if (!snap.Exists) { callback(false, "Room not found. Check the code."); yield break; }
+        if (!snap.Exists) { callback(false, "Room not found. Check the code.", null); yield break; }
 
         object finished = snap.Child("boyFinished").Value;
-        if (finished is bool && (bool)finished) callback(true, "Room found!");
-        else callback(false, "He hasn't finished his journey yet. Try again later.");
+        if (!(finished is bool && (bool)finished))
+        {
+            callback(false, "He hasn't finished his journey yet. Try again later.", null);
+            yield break;
+        }
+
+        var info = new RoomInfo { code = code, boyName = "KNIGHT", ring = 0 };
+        object nameVal = snap.Child("boyName").Value;
+        if (nameVal is string) info.boyName = NameUtil.Clean((string)nameVal, "KNIGHT");
+        object ringVal = snap.Child("ringId").Value;
+        if (ringVal != null)
+        {
+            try { info.ring = Mathf.Clamp(Convert.ToInt32(ringVal), 0, Rings.Count - 1); } catch (Exception) { info.ring = 0; }
+        }
+        callback(true, "Room found!", info);
     }
 
 #else
@@ -242,23 +258,31 @@ public class FirebaseManager : MonoBehaviour
         Debug.LogWarning("[Firebase] " + StatusMessage + ". Room codes only work on this device. See README step 4.");
     }
 
-    IEnumerator CreateRoomRoutine(Action<bool, string, string> callback)
+    IEnumerator CreateRoomRoutine(string boyName, int ringId, Action<bool, string, string> callback)
     {
         yield return new WaitForSeconds(0.6f);
         string code;
         int guard = 0;
         do { code = GenerateCode(); } while (PlayerPrefs.HasKey("demoRoom_" + code) && ++guard < 50);
-        PlayerPrefs.SetString("demoRoom_" + code, "boyFinished=true;createdAt=" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        PlayerPrefs.SetString("demoRoom_" + code, boyName + "|" + ringId);
         PlayerPrefs.Save();
         callback(true, code, null);
     }
 
-    IEnumerator VerifyRoomRoutine(string code, Action<bool, string> callback)
+    IEnumerator VerifyRoomRoutine(string code, Action<bool, string, RoomInfo> callback)
     {
         yield return new WaitForSeconds(0.5f);
-        if (!IsWellFormed(code)) { callback(false, "A code has 6 letters/numbers."); yield break; }
-        if (PlayerPrefs.HasKey("demoRoom_" + code)) callback(true, "Room found!");
-        else callback(false, "Room not found (offline demo: only codes made on this device work).");
+        if (!IsWellFormed(code)) { callback(false, "A code has 6 letters/numbers.", null); yield break; }
+        if (!PlayerPrefs.HasKey("demoRoom_" + code))
+        {
+            callback(false, "Room not found (offline demo: only codes made on this device work).", null);
+            yield break;
+        }
+        string[] parts = PlayerPrefs.GetString("demoRoom_" + code).Split('|');
+        var info = new RoomInfo { code = code, boyName = parts.Length > 0 ? parts[0] : "KNIGHT", ring = 0 };
+        int r;
+        if (parts.Length > 1 && int.TryParse(parts[1], out r)) info.ring = Mathf.Clamp(r, 0, Rings.Count - 1);
+        callback(true, "Room found!", info);
     }
 #endif
 }

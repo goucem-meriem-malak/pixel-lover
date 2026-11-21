@@ -3,27 +3,27 @@ using System.Collections;
 using UnityEngine;
 
 /// <summary>
-/// Level-10 reunion (Player 2 / girl). Started automatically by LevelManager when she walks up
-/// to the sitting boy:
-///   girl walks to him -> boy stands up (hop) -> bouquet pops up and is offered ->
-///   hearts float up -> they step together and "kiss" (lean + big heart pop + heart burst) ->
-///   "Together Forever" text -> "The End" screen.
-/// Added to the LevelManager object automatically. Everything is sprite/coroutine based.
+/// Level-10 proposal (Player 2 / girl). Started automatically by LevelManager when she walks up to the
+/// waiting knight:
+///   she walks to him -> he takes off... stands up (helmet off) and hops -> steps toward her ->
+///   KNEELS ON ONE KNEE and holds out an open ring box with the ring he bought ->
+///   "WILL YOU MARRY ME, NAME?" -> she hops and says YES -> the ring flies to her, hearts burst ->
+///   they step together, lean in for the kiss, big heart -> "TOGETHER FOREVER" with both names.
+/// Added to the LevelManager object automatically. Everything is sprite + coroutine based.
 /// </summary>
 public class EndingCutscene : MonoBehaviour
 {
     [Header("Text")]
-    public string endingMessage = "Together Forever";
-    [Tooltip("Append the heart emoji glyph to the text. Off by default because Unity's default font may not " +
-             "contain it on every device; a heart SPRITE is shown beside the text instead.")]
-    public bool useEmojiGlyph = false;
+    public string endingMessage = "TOGETHER FOREVER";
 
     [Header("Timing")]
-    public float standDistance = 1.6f;      // how far from the boy the girl stops
-    public float endHoldSeconds = 3f;
+    public float standDistance = 2.4f;      // how far from the boy the girl stops
+    public float endHoldSeconds = 4f;
 
     public Action onFinished;
     public bool IsPlaying { get; private set; }
+
+    Transform root;
 
     public void Abort()
     {
@@ -31,20 +31,21 @@ public class EndingCutscene : MonoBehaviour
         IsPlaying = false;
     }
 
-    public void Play(PlayerController2D girl, GameObject boyNpc)
+    public void Play(PlayerController2D girl, GameObject boyNpc, string boyName, string girlName, int ringId)
     {
         if (IsPlaying) return;
-        StartCoroutine(Run(girl, boyNpc));
+        StartCoroutine(Run(girl, boyNpc, boyName, girlName, ringId));
     }
 
-    IEnumerator Run(PlayerController2D girl, GameObject boy)
+    IEnumerator Run(PlayerController2D girl, GameObject boy, string boyName, string girlName, int ringId)
     {
         IsPlaying = true;
         var lm = LevelManager.Instance;
         var ui = UIManager.Instance;
-        Transform root = lm.LevelRoot;
-        var boySr = boy.GetComponentInChildren<SpriteRenderer>();
-        Transform girlVisual = girl.VisualTransform;
+        root = lm.LevelRoot;
+        var boySr = boy.GetComponent<SpriteRenderer>();
+        Transform girlVisual = girl.transform.Find("Visual");
+        float girlScale = girl.IsBig ? 1.3f : 1f;
 
         TouchInput.Reset();
         ui.HideTouchControls();
@@ -54,68 +55,80 @@ public class EndingCutscene : MonoBehaviour
         yield return girl.WalkTo(boy.transform.position.x - standDistance);
         girl.FreezeForCutscene();
         girl.Face(1);
-        yield return new WaitForSeconds(0.5f);
 
-        // 2) He stands up, turns to her, little happy hop
-        boySr.sprite = lm.BoyStandingSprite;
+        Camera cam = Camera.main;
+        if (cam != null) StartCoroutine(Zoom(cam, cam.orthographicSize, cam.orthographicSize * 0.8f, 1.5f));
+        yield return new WaitForSeconds(0.6f);
+
+        // 2) He jumps up (helmet off), then steps toward her
+        boySr.sprite = SpriteFactory.Get("knight_bare_idle");
         boySr.flipX = true;
-        yield return Hop(boy.transform, 0.35f, 0.3f);
+        Hearts(girl.transform.position + new Vector3(0f, 2.2f * girlScale, 0f), 1);
+        yield return Hop(boy.transform, 0.5f, 0.35f);
         yield return new WaitForSeconds(0.3f);
+        yield return MoveX(boy.transform, boy.transform.position.x - 0.7f, 0.6f);
 
-        // 3) Bouquet pops up in his hands and is offered to her
-        GameObject bouquet = MakeSprite("Bouquet", lm.BouquetSprite, root, boy.transform.position + new Vector3(-0.45f, 0.5f, 0f), 21);
-        bouquet.transform.localScale = Vector3.zero;
-        yield return Scale(bouquet.transform, 0f, 1.1f, 0.35f);
-        yield return new WaitForSeconds(0.3f);
-        Vector3 offerPos = girl.transform.position + new Vector3(0.55f, 0.55f, 0f);
-        yield return Move(bouquet.transform, bouquet.transform.position, offerPos, 0.6f);
-        yield return Hop(girl.transform, 0.25f, 0.25f);
-
-        // 4) Hearts rise between them
-        Vector3 mid = (boy.transform.position + girl.transform.position) * 0.5f + new Vector3(0f, 1.2f, 0f);
-        for (int i = 0; i < 8; i++)
-        {
-            Vector3 p = mid + new Vector3(UnityEngine.Random.Range(-0.6f, 0.6f), UnityEngine.Random.Range(-0.2f, 0.2f), 0f);
-            StartCoroutine(FloatHeart(root, lm.HeartSprite, p, UnityEngine.Random.Range(0.35f, 0.6f), 1.6f));
-            yield return new WaitForSeconds(0.12f);
-        }
+        // 3) He kneels on one knee and holds out the open ring box
+        boySr.sprite = SpriteFactory.Get("knight_bare_kneel");
         yield return new WaitForSeconds(0.4f);
 
-        // 5) They step together; camera zooms in a little
-        Camera cam = Camera.main;
-        if (cam != null) StartCoroutine(Zoom(cam, cam.orthographicSize, 4.2f, 1.2f));
+        Vector3 palm = boy.transform.position + new Vector3(-0.5f, 0.69f, 0f);   // the open hand of the kneeling sprite
+        GameObject box = MakeSprite("RingBox", SpriteFactory.Get("ringbox_open"), palm, 21);
+        GameObject ring = MakeSprite("Ring", Rings.Icon(ringId), palm + new Vector3(0f, 0.45f, 0f), 22);
+        box.transform.localScale = Vector3.zero;
+        ring.transform.localScale = Vector3.zero;
+        StartCoroutine(Sparkles(ring.transform));
+        yield return Scale(box.transform, 0f, 1f, 0.3f);
+        yield return Scale(ring.transform, 0f, 1f, 0.3f);
 
+        // 4) The question
+        GameObject ask = Bubble(boy.transform.position + new Vector3(-0.8f, 2.6f, 0f),
+                                "WILL YOU MARRY ME, " + girlName.ToUpperInvariant() + "?");
+        yield return new WaitForSeconds(2.8f);
+        DestroyBubble(ask);
+
+        // 5) She says yes
+        Vector3 girlHead = girl.transform.position + new Vector3(0f, 2.4f * girlScale, 0f);
+        GameObject yes = Bubble(girlHead + new Vector3(0f, 0.4f, 0f), "YES!");
+        yield return Hop(girl.transform, 0.45f, 0.3f);
+        Hearts(girl.transform.position + new Vector3(0f, 1.2f, 0f), 8);
+        yield return Hop(girl.transform, 0.35f, 0.25f);
+        yield return new WaitForSeconds(0.9f);
+        DestroyBubble(yes);
+
+        // 6) The ring flies to her, he stands up
+        Vector3 fromRing = ring.transform.position;
+        Vector3 toRing = girl.transform.position + new Vector3(0.25f, 1.0f * girlScale, 0f);
+        yield return Move(ring.transform, fromRing, toRing, 0.7f);
+        Destroy(box);
+        yield return new WaitForSeconds(0.3f);
+        Hearts(toRing, 6);
+        boySr.sprite = SpriteFactory.Get("knight_bare_idle");
+        yield return Hop(boy.transform, 0.4f, 0.3f);
+        Destroy(ring);
+
+        // 7) They step together, lean in for the kiss, big heart
         float midX = (girl.transform.position.x + boy.transform.position.x) * 0.5f;
         float gy = girl.transform.position.y, by = boy.transform.position.y;
-        yield return MoveBoth(girl.transform, new Vector3(midX - 0.42f, gy, 0f),
-                              boy.transform, new Vector3(midX + 0.42f, by, 0f), 0.8f);
-        bouquet.transform.position = girl.transform.position + new Vector3(0.1f, 0.5f, 0f);
+        yield return MoveBoth(girl.transform, new Vector3(midX - 0.45f, gy, 0f),
+                              boy.transform, new Vector3(midX + 0.45f, by, 0f), 0.8f);
+        if (girlVisual != null) girlVisual.localRotation = Quaternion.Euler(0f, 0f, -8f);
+        boy.transform.localRotation = Quaternion.Euler(0f, 0f, 8f);
 
-        // 6) Kiss: lean toward each other, big heart pops, hearts burst
-        girlVisual.localRotation = Quaternion.Euler(0f, 0f, -9f);
-        boySr.transform.localRotation = Quaternion.Euler(0f, 0f, 9f);
-        Vector3 kissPos = new Vector3(midX, Mathf.Max(gy, by) + 1.15f, 0f);
-        GameObject big = MakeSprite("KissHeart", lm.HeartSprite, root, kissPos, 22);
+        Vector3 kissPos = new Vector3(midX, Mathf.Max(gy, by) + 2.4f * girlScale, 0f);
+        GameObject big = MakeSprite("KissHeart", SpriteFactory.Get("heart"), kissPos, 22);
         big.transform.localScale = Vector3.zero;
-        yield return Scale(big.transform, 0f, 1.8f, 0.45f);
-        for (int i = 0; i < 14; i++)
-        {
-            float a = i / 14f * Mathf.PI * 2f;
-            Vector3 dir = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f);
-            StartCoroutine(FlyHeart(root, lm.HeartSprite, kissPos, dir * UnityEngine.Random.Range(1.5f, 3f), 0.35f, 1.2f));
-        }
-        string msg = useEmojiGlyph ? endingMessage + " ❤️" : endingMessage;
-        ui.ShowEndingMessage(msg, !useEmojiGlyph);
+        yield return Scale(big.transform, 0f, 3f, 0.45f);
+        Hearts(kissPos, 12);
+        ui.ShowEndingMessage(endingMessage, NameUtil.Clean(boyName, "KNIGHT").ToUpperInvariant() + " ^ " + NameUtil.Clean(girlName, "PRINCESS").ToUpperInvariant());
 
-        // keep the big heart pulsing while the message shows
         float t = 0f;
         while (t < endHoldSeconds)
         {
             t += Time.deltaTime;
-            float s = 1.8f + 0.15f * Mathf.Sin(t * 6f);
+            float s = 3f + 0.3f * Mathf.Sin(t * 6f);
             big.transform.localScale = new Vector3(s, s, 1f);
-            if (UnityEngine.Random.value < 0.06f)
-                StartCoroutine(FloatHeart(root, lm.HeartSprite, kissPos + new Vector3(UnityEngine.Random.Range(-1.2f, 1.2f), 0.3f, 0f), 0.4f, 1.4f));
+            if (UnityEngine.Random.value < 0.05f) Hearts(kissPos + new Vector3(UnityEngine.Random.Range(-1.5f, 1.5f), 0f, 0f), 1);
             yield return null;
         }
 
@@ -126,15 +139,86 @@ public class EndingCutscene : MonoBehaviour
 
     // ------------------------------------------------------------------ helpers
 
-    static GameObject MakeSprite(string name, Sprite sprite, Transform parent, Vector3 pos, int order)
+    GameObject MakeSprite(string name, Sprite sprite, Vector3 pos, int order)
     {
         var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
+        go.transform.SetParent(root, false);
         go.transform.position = pos;
         var sr = go.AddComponent<SpriteRenderer>();
         sr.sprite = sprite;
         sr.sortingOrder = order;
         return go;
+    }
+
+    /// <summary>Little hearts that float up and fade.</summary>
+    void Hearts(Vector3 centre, int count)
+    {
+        Sprite heart = SpriteFactory.Get("heart");
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 p = centre + new Vector3(UnityEngine.Random.Range(-0.7f, 0.7f), UnityEngine.Random.Range(-0.3f, 0.3f), 0f);
+            PopFx.Spawn(root, heart, p, new Vector2(UnityEngine.Random.Range(-0.6f, 0.6f), UnityEngine.Random.Range(1.2f, 2.4f)),
+                        0f, UnityEngine.Random.Range(1.0f, 1.6f), 23, UnityEngine.Random.Range(0.9f, 1.6f));
+        }
+    }
+
+    IEnumerator Sparkles(Transform around)
+    {
+        while (around != null)
+        {
+            Sprite s = SpriteFactory.Get(UnityEngine.Random.value < 0.5f ? "sparkle_1" : "sparkle_2");
+            Vector3 p = around.position + new Vector3(UnityEngine.Random.Range(-0.5f, 0.5f), UnityEngine.Random.Range(-0.3f, 0.5f), 0f);
+            PopFx.Spawn(root, s, p, new Vector2(0f, 0.6f), 0f, 0.45f, 24);
+            yield return new WaitForSeconds(0.18f);
+        }
+    }
+
+    /// <summary>Speech bubble drawn with the small pixel font: dark text on a white box with a dark border and a tail.</summary>
+    GameObject Bubble(Vector3 pos, string text)
+    {
+        const float ppu = 26f;
+        Color ink = new Color(0.17f, 0.15f, 0.25f, 1f);
+        Sprite txt = PixelFont.MakeSprite(text, ink, new Color(0f, 0f, 0f, 0f), ppu);
+        float w = txt.rect.width / ppu, h = txt.rect.height / ppu;
+
+        var holder = new GameObject("Bubble");
+        holder.transform.SetParent(root, false);
+        holder.transform.position = pos;
+
+        Child(holder.transform, SpriteFactory.Square(ink), Vector3.zero, new Vector2(w + 0.6f, h + 0.6f), 30, 0f);
+        Child(holder.transform, SpriteFactory.Square(Color.white), Vector3.zero, new Vector2(w + 0.4f, h + 0.4f), 31, 0f);
+        float ty = -(h + 0.4f) * 0.5f;
+        Child(holder.transform, SpriteFactory.Square(ink), new Vector3(0f, ty, 0f), new Vector2(0.32f, 0.32f), 30, 45f);
+        Child(holder.transform, SpriteFactory.Square(Color.white), new Vector3(0f, ty + 0.05f, 0f), new Vector2(0.24f, 0.24f), 31, 45f);
+        Child(holder.transform, txt, Vector3.zero, Vector2.one, 32, 0f);
+        return holder;
+    }
+
+    static void Child(Transform parent, Sprite sprite, Vector3 localPos, Vector2 scale, int order, float rotZ)
+    {
+        var go = new GameObject("Part");
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = localPos;
+        go.transform.localRotation = Quaternion.Euler(0f, 0f, rotZ);
+        go.transform.localScale = new Vector3(scale.x, scale.y, 1f);
+        var sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = sprite;
+        sr.sortingOrder = order;
+    }
+
+    static void DestroyBubble(GameObject bubble)
+    {
+        if (bubble == null) return;
+        foreach (var sr in bubble.GetComponentsInChildren<SpriteRenderer>())
+        {
+            // only the text sprite owns a texture of its own (the rest are cached squares)
+            if (sr.sprite != null && sr.sprite.texture != null && sr.sprite.texture.width > 1)
+            {
+                Destroy(sr.sprite.texture);
+                Destroy(sr.sprite);
+            }
+        }
+        Destroy(bubble);
     }
 
     static float EaseOutBack(float t)
@@ -182,6 +266,13 @@ public class EndingCutscene : MonoBehaviour
         tr.position = to;
     }
 
+    static IEnumerator MoveX(Transform tr, float toX, float duration)
+    {
+        Vector3 from = tr.position;
+        Vector3 to = new Vector3(toX, from.y, from.z);
+        yield return Move(tr, from, to, duration);
+    }
+
     static IEnumerator MoveBoth(Transform a, Vector3 aTo, Transform b, Vector3 bTo, float duration)
     {
         Vector3 aFrom = a.position, bFrom = b.position;
@@ -207,43 +298,5 @@ public class EndingCutscene : MonoBehaviour
             cam.orthographicSize = Mathf.Lerp(from, to, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / duration)));
             yield return null;
         }
-    }
-
-    /// <summary>Heart that drifts upward, wobbles and fades out.</summary>
-    static IEnumerator FloatHeart(Transform parent, Sprite sprite, Vector3 start, float scale, float life)
-    {
-        var go = MakeSprite("Heart", sprite, parent, start, 23);
-        var sr = go.GetComponent<SpriteRenderer>();
-        float t = 0f;
-        float wobble = UnityEngine.Random.value * 6f;
-        while (t < life && go != null)
-        {
-            t += Time.deltaTime;
-            float k = t / life;
-            go.transform.position = start + new Vector3(Mathf.Sin(t * 4f + wobble) * 0.25f, k * 1.8f, 0f);
-            float s = scale * (0.6f + 0.4f * Mathf.Min(1f, k * 5f));
-            go.transform.localScale = new Vector3(s, s, 1f);
-            sr.color = new Color(1f, 1f, 1f, 1f - k * k);
-            yield return null;
-        }
-        if (go != null) Destroy(go);
-    }
-
-    /// <summary>Heart that flies out along a vector and fades (used for the kiss burst).</summary>
-    static IEnumerator FlyHeart(Transform parent, Sprite sprite, Vector3 start, Vector3 velocity, float scale, float life)
-    {
-        var go = MakeSprite("Heart", sprite, parent, start, 23);
-        var sr = go.GetComponent<SpriteRenderer>();
-        go.transform.localScale = new Vector3(scale, scale, 1f);
-        float t = 0f;
-        while (t < life && go != null)
-        {
-            t += Time.deltaTime;
-            float k = t / life;
-            go.transform.position = start + velocity * (1f - (1f - k) * (1f - k));
-            sr.color = new Color(1f, 1f, 1f, 1f - k);
-            yield return null;
-        }
-        if (go != null) Destroy(go);
     }
 }

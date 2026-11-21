@@ -10,8 +10,11 @@ public class CameraFollow2D : MonoBehaviour
     public float minX = 0f;
     public float maxX = 100f;
     public float minY = 2.5f;
+    [Tooltip("Snap the camera to the pixel grid so pixel art never shimmers.")]
+    public bool pixelSnap = true;
 
     Camera cam;
+    Vector3 smoothPos;      // unsnapped position, so snapping never stalls the smoothing
 
     void Awake() { cam = GetComponent<Camera>(); }
 
@@ -30,13 +33,20 @@ public class CameraFollow2D : MonoBehaviour
     public void Snap()
     {
         if (cam == null) cam = GetComponent<Camera>();
-        if (target != null) transform.position = Desired();
+        if (target != null) { smoothPos = Desired(); transform.position = smoothPos; }
     }
 
     void LateUpdate()
     {
         if (target == null) return;
         float t = 1f - Mathf.Exp(-smooth * Time.deltaTime);
-        transform.position = Vector3.Lerp(transform.position, Desired(), t);
+        smoothPos = Vector3.Lerp(smoothPos, Desired(), t);
+        Vector3 p = smoothPos;
+        if (pixelSnap)
+        {
+            p.x = Mathf.Round(p.x * 16f) / 16f;   // the art is 16 pixels per unit
+            p.y = Mathf.Round(p.y * 16f) / 16f;
+        }
+        transform.position = p;
     }
 }

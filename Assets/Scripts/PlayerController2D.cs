@@ -13,18 +13,24 @@ public static class TouchInput
     public static bool Right;
     public static bool JumpHeld;
     static bool jumpPressed;
+    static bool firePressed;
 
     public static void PressJump() { JumpHeld = true; jumpPressed = true; }
     public static void ReleaseJump() { JumpHeld = false; }
     public static bool ConsumeJumpPressed() { bool v = jumpPressed; jumpPressed = false; return v; }
-    public static void Reset() { Left = Right = JumpHeld = jumpPressed = false; }
+    public static void PressFire() { firePressed = true; }
+    public static bool ConsumeFirePressed() { bool v = firePressed; firePressed = false; return v; }
+    public static void Reset() { Left = Right = JumpHeld = jumpPressed = firePressed = false; }
 }
 
 /// <summary>
-/// Side-scroller controller: Rigidbody2D + BoxCollider2D, ground check with linecasts,
-/// coyote time, jump buffering, variable jump height. Works with touch buttons and
-/// (for testing in the Editor) the keyboard: A/D or arrows + Space/W/Up.
-/// The Rigidbody2D and BoxCollider2D are added/configured automatically.
+/// Side-scroller controller: Rigidbody2D + BoxCollider2D, ground check with linecasts, coyote time,
+/// jump buffering, variable jump height. Works with touch buttons and (for testing in the Editor)
+/// the keyboard: A/D or arrows, Space/W/Up to jump, F to throw a fireball.
+///
+/// The boy is a knight and the girl a princess. Only the girl uses power-ups:
+/// Small -> Big (growth mushroom) -> Fire (fire flower, throws fireballs).
+/// Jumping into a block from below makes it bump (OnCollisionEnter2D).
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(BoxCollider2D))]
@@ -41,52 +47,39 @@ public class PlayerController2D : MonoBehaviour
     [Header("Ground check (linecasts)")]
     public float groundCheckDistance = 0.12f;
 
-    [Header("Collider (auto-configured when enabled)")]
-    public bool autoConfigureCollider = true;
-    public Vector2 colliderSize = new Vector2(0.55f, 0.95f);
-
-    [Header("Misc")]
+    [Header("Body (small size; the big form scales it)")]
+    public Vector2 bodySize = new Vector2(0.75f, 1.45f);
+    public float bigScale = 1.3f;
     public float killY = -9f;
 
+    public PlayerRole Role { get; private set; }
+    public PowerState Form { get; private set; }
+    public PlayerPose Pose { get; private set; }
+    public bool IsBig { get { return Form != PowerState.Small; } }
     public bool ControlEnabled { get; set; }
     public bool Invincible { get; set; }
     public bool IsDead { get; private set; }
     public bool IsGrounded { get; private set; }
-    public float VerticalVelocity { get { return Vel.y; } }
-    public Transform VisualTransform { get { return visual != null ? visual.transform : transform; } }
+    public float VerticalVelocity { get { return rb.GetVel().y; } }
+    public Collider2D BodyCollider { get { return col; } }
+    public int Facing { get { return facing; } }
 
     Rigidbody2D rb;
     BoxCollider2D col;
     SpriteRenderer visual;
-    Sprite standSprite, sitSprite;
     ContactFilter2D filter;
     readonly RaycastHit2D[] hits = new RaycastHit2D[4];
 
-    float inputX, externalMove;
-    bool jumpHeld, jumpHeldPrev, jumping, sitting;
-    float jumpBufferCounter, coyoteCounter, invulnTimer;
-    int facing = 1;
-    Coroutine deathRoutine;
+    Sprite idle, jump, sit;
+    Sprite[] walk;
 
-    Vector2 Vel
-    {
-        get
-        {
-#if UNITY_6000_0_OR_NEWER
-            return rb.linearVelocity;
-#else
-            return rb.velocity;
-#endif
-        }
-        set
-        {
-#if UNITY_6000_0_OR_NEWER
-            rb.linearVelocity = value;
-#else
-            rb.velocity = value;
-#endif
-        }
-    }
+    float sizeScale = 1f;
+    float inputX, externalMove;
+    bool jumpHeld, jumpHeldPrev, jumping;
+    float jumpBufferCounter, coyoteCounter, invulnTimer, fireCooldown, appliedVy;
+    int facing = 1;
+    int lastBumpFrame = -1;
+    Coroutine deathRoutine;
 
     void Awake()
     {
@@ -100,36 +93,82 @@ public class PlayerController2D : MonoBehaviour
         rb.interpolation = RigidbodyInterpolation2D.Interpolate;
         rb.sleepMode = RigidbodySleepMode2D.NeverSleep;
 
-        if (autoConfigureCollider)
-        {
-            col.size = colliderSize;
-            col.offset = new Vector2(0f, colliderSize.y * 0.5f);
-        }
-        // Zero friction so the player never sticks to walls / tile seams
+        // zero friction so the player never sticks to walls or tile seams
         col.sharedMaterial = new PhysicsMaterial2D("NoFriction") { friction = 0f, bounciness = 0f };
 
-        visual = GetComponentInChildren<SpriteRenderer>();
-        if (visual == null)
-        {
-            var v = new GameObject("Visual");
-            v.transform.SetParent(transform, false);
-            visual = v.AddComponent<SpriteRenderer>();
-            visual.sortingOrder = 10;
-        }
+        var v = new GameObject("Visual");
+        v.transform.SetParent(transform, false);
+        visual = v.AddComponent<SpriteRenderer>();
+        visual.sortingOrder = 10;
 
         filter = new ContactFilter2D();
         filter.useTriggers = false;
         filter.useLayerMask = false;
         filter.useDepth = false;
         filter.useNormalAngle = false;
+
+        ApplySize();
     }
 
-    /// <summary>Set the standing / sitting sprites (called by LevelManager).</summary>
-    public void SetLook(Sprite stand, Sprite sit)
+    /// <summary>Knight for the boy, princess for the girl, plus the little name above the head.</summary>
+    public void Setup(PlayerRole role, string displayName)
     {
-        standSprite = stand;
-        sitSprite = sit;
-        if (visual != null && stand != null) visual.sprite = stand;
+        Role = role;
+        string who = role == PlayerRole.Boy ? "knight" : "princess";
+        idle = SpriteFactory.Get(who + "_idle");
+        jump = SpriteFactory.Get(who + "_jump");
+        walk = new[] { SpriteFactory.Get(who + "_walk1"), idle, SpriteFactory.Get(who + "_walk2"), idle };
+        sit = role == PlayerRole.Boy ? SpriteFactory.Get("knight_sit") : idle;
+        visual.sprite = idle;
+        NameTag.Create(transform, displayName, () => 1.7f * sizeScale + 0.12f);
+    }
+
+    // ------------------------------------------------------------------ size / power-ups
+
+    void ApplySize()
+    {
+        Vector2 s = bodySize * sizeScale;
+        col.size = s;
+        col.offset = new Vector2(0f, s.y * 0.5f);
+        if (visual != null) visual.transform.localScale = new Vector3(sizeScale, sizeScale, 1f);
+    }
+
+    void SetForm(PowerState f)
+    {
+        Form = f;
+        sizeScale = f == PowerState.Small ? 1f : bigScale;
+        ApplySize();
+        visual.color = f == PowerState.Fire ? new Color(1f, 0.82f, 0.74f) : Color.white;
+    }
+
+    /// <summary>Called by a PowerUp. Boys ignore them.</summary>
+    public void CollectPower(PowerKind kind)
+    {
+        if (Role != PlayerRole.Girl || IsDead) return;
+        PowerState before = Form;
+        if (Form == PowerState.Small) SetForm(PowerState.Big);
+        else if (kind == PowerKind.Fire) SetForm(PowerState.Fire);
+        if (Form != before)
+        {
+            invulnTimer = Mathf.Max(invulnTimer, 0.6f);
+            if (LevelManager.Instance != null) LevelManager.Instance.UpdateHud();
+        }
+    }
+
+    /// <summary>Damage: Fire -> Big -> Small -> dead.</summary>
+    public void Hurt()
+    {
+        if (IsDead || Invincible || invulnTimer > 0f) return;
+        if (Form == PowerState.Fire) { SetForm(PowerState.Big); invulnTimer = 1.5f; }
+        else if (Form == PowerState.Big) { SetForm(PowerState.Small); invulnTimer = 1.5f; }
+        else Die();
+        if (LevelManager.Instance != null) LevelManager.Instance.UpdateHud();
+    }
+
+    /// <summary>True when the player is coming down onto this enemy's head.</summary>
+    public bool IsStompingOn(Collider2D enemy)
+    {
+        return col.bounds.min.y >= enemy.bounds.center.y - 0.1f && VerticalVelocity <= 0.5f;
     }
 
     // ------------------------------------------------------------------ input + timers
@@ -139,11 +178,12 @@ public class PlayerController2D : MonoBehaviour
         if (IsDead) return;
 
         float x = 0f;
-        bool pressed = false;
+        bool pressed = false, fire = false;
         if (ControlEnabled)
         {
             x = (TouchInput.Right ? 1f : 0f) - (TouchInput.Left ? 1f : 0f);
             pressed = TouchInput.ConsumeJumpPressed();
+            fire = TouchInput.ConsumeFirePressed();
             jumpHeld = TouchInput.JumpHeld;
 
 #if ENABLE_INPUT_SYSTEM
@@ -156,16 +196,19 @@ public class PlayerController2D : MonoBehaviour
                 if (kHeld && !jumpHeldPrev) pressed = true;
                 jumpHeld |= kHeld;
                 jumpHeldPrev = kHeld;
+                if (k.fKey.wasPressedThisFrame) fire = true;
             }
 #elif ENABLE_LEGACY_INPUT_MANAGER
             x += Input.GetAxisRaw("Horizontal");
             if (Input.GetButtonDown("Jump")) pressed = true;
             jumpHeld |= Input.GetButton("Jump");
+            if (Input.GetKeyDown(KeyCode.F)) fire = true;
 #endif
         }
         else
         {
             TouchInput.ConsumeJumpPressed();
+            TouchInput.ConsumeFirePressed();
             jumpHeld = false;
         }
 
@@ -173,6 +216,14 @@ public class PlayerController2D : MonoBehaviour
 
         if (pressed) jumpBufferCounter = jumpBufferTime;
         else jumpBufferCounter -= Time.deltaTime;
+
+        fireCooldown -= Time.deltaTime;
+        if (fire && Form == PowerState.Fire && fireCooldown <= 0f && LevelManager.Instance != null)
+        {
+            fireCooldown = 0.35f;
+            LevelManager.Instance.SpawnFireball(
+                new Vector2(transform.position.x + facing * 0.7f, transform.position.y + 0.9f * sizeScale), facing);
+        }
 
         if (invulnTimer > 0f)
         {
@@ -185,6 +236,17 @@ public class PlayerController2D : MonoBehaviour
         Animate();
     }
 
+    void Animate()
+    {
+        visual.flipX = facing < 0;
+        if (Pose == PlayerPose.Sit) { visual.sprite = sit; return; }
+
+        Vector2 v = rb.GetVel();
+        if (!IsGrounded) visual.sprite = jump;
+        else if (Mathf.Abs(v.x) > 0.3f) visual.sprite = walk[(int)(Time.time * 9f) % walk.Length];
+        else visual.sprite = idle;
+    }
+
     // ------------------------------------------------------------------ physics
 
     void FixedUpdate()
@@ -193,7 +255,7 @@ public class PlayerController2D : MonoBehaviour
 
         bool grounded = CheckGround();
         IsGrounded = grounded;
-        Vector2 v = Vel;
+        Vector2 v = rb.GetVel();
 
         float move = ControlEnabled ? inputX : externalMove;
         float speed = ControlEnabled ? moveSpeed : autoWalkSpeed;
@@ -220,13 +282,14 @@ public class PlayerController2D : MonoBehaviour
         }
         if (v.y <= 0f) jumping = false;
 
-        Vel = v;
+        appliedVy = v.y;
+        rb.SetVel(v);
     }
 
     /// <summary>Three downward linecasts from the feet (left, centre, right).</summary>
     bool CheckGround()
     {
-        if (Vel.y > 0.1f) return false; // moving up (also avoids "grounding" inside one-way platforms)
+        if (rb.GetVel().y > 0.1f) return false;
 
         Bounds b = col.bounds;
         const float inset = 0.05f;
@@ -245,33 +308,29 @@ public class PlayerController2D : MonoBehaviour
         return false;
     }
 
-    // ------------------------------------------------------------------ visuals
-
-    void Animate()
+    /// <summary>Head hits a block from below: bump it (bricks, question blocks).</summary>
+    void OnCollisionEnter2D(Collision2D c)
     {
-        var t = visual.transform;
-        if (sitting) return;
+        if (IsDead || appliedVy < 0.5f) return;
+        var blk = c.collider.GetComponent<Block>();
+        if (blk == null || lastBumpFrame == Time.frameCount) return;
 
-        visual.flipX = facing < 0;
-        float sx = 1f, sy = 1f;
-        if (!IsGrounded)
+        Bounds bb = c.collider.bounds, pb = col.bounds;
+        bool above = bb.center.y > pb.center.y;
+        bool overlapX = Mathf.Abs(bb.center.x - pb.center.x) < bb.extents.x + pb.extents.x - 0.05f;
+        if (above && overlapX)
         {
-            sy = 1f + Mathf.Clamp(Vel.y * 0.012f, -0.08f, 0.12f);
-            sx = 2f - sy;
+            lastBumpFrame = Time.frameCount;
+            blk.Hit(this);
         }
-        else if (Mathf.Abs(Vel.x) > 0.1f)
-        {
-            sy = 1f + 0.05f * Mathf.Sin(Time.time * 22f);
-            sx = 2f - sy;
-        }
-        t.localScale = new Vector3(sx, sy, 1f);
     }
 
-    // ------------------------------------------------------------------ gameplay API
+    // ------------------------------------------------------------------ death / respawn
 
     public void Bounce()
     {
-        Vel = new Vector2(Vel.x, 9f);
+        Vector2 v = rb.GetVel();
+        rb.SetVel(new Vector2(v.x, 10f));
         jumping = false;
     }
 
@@ -280,7 +339,7 @@ public class PlayerController2D : MonoBehaviour
         if (IsDead || Invincible || invulnTimer > 0f) return;
         IsDead = true;
         ControlEnabled = false;
-        Vel = Vector2.zero;
+        rb.SetVel(Vector2.zero);
         rb.simulated = false;
         deathRoutine = StartCoroutine(DeathAnim());
         if (LevelManager.Instance != null) LevelManager.Instance.OnPlayerDied();
@@ -289,14 +348,14 @@ public class PlayerController2D : MonoBehaviour
     IEnumerator DeathAnim()
     {
         visual.enabled = true;
-        visual.color = new Color(1f, 0.55f, 0.55f);
+        visual.sprite = jump;
+        visual.color = new Color(1f, 0.6f, 0.6f);
         Vector3 baseLocal = visual.transform.localPosition;
         float t = 0f;
-        while (t < 0.7f)
+        while (t < 0.8f)
         {
             t += Time.deltaTime;
             visual.transform.localPosition = baseLocal + new Vector3(0f, 7f * t - 12f * t * t, 0f);
-            visual.transform.Rotate(0f, 0f, 540f * Time.deltaTime);
             yield return null;
         }
     }
@@ -307,12 +366,10 @@ public class PlayerController2D : MonoBehaviour
         transform.position = pos;
         rb.position = pos;
         rb.simulated = true;
-        Vel = Vector2.zero;
-        var t = visual.transform;
-        t.localPosition = Vector3.zero;
-        t.localRotation = Quaternion.identity;
-        t.localScale = Vector3.one;
-        visual.color = Color.white;
+        rb.SetVel(Vector2.zero);
+        visual.transform.localPosition = Vector3.zero;
+        visual.transform.localRotation = Quaternion.identity;
+        SetForm(PowerState.Small);
         visual.enabled = true;
         IsDead = false;
         ControlEnabled = true;
@@ -333,7 +390,8 @@ public class PlayerController2D : MonoBehaviour
             yield return null;
         }
         externalMove = 0f;
-        Vel = new Vector2(0f, Vel.y);
+        Vector2 v = rb.GetVel();
+        rb.SetVel(new Vector2(0f, v.y));
     }
 
     public void Face(int dir) { facing = dir >= 0 ? 1 : -1; visual.flipX = facing < 0; }
@@ -344,11 +402,11 @@ public class PlayerController2D : MonoBehaviour
         ControlEnabled = false;
         Invincible = true;
         externalMove = 0f;
-        Vel = Vector2.zero;
-        sitting = true;
-        if (sitSprite != null) visual.sprite = sitSprite;
-        visual.transform.localScale = Vector3.one;
+        rb.SetVel(Vector2.zero);
+        Pose = PlayerPose.Sit;
+        facing = 1;
         visual.flipX = false;
+        visual.sprite = sit;
     }
 
     /// <summary>Freeze physics so the cutscene can move the transform directly.</summary>
@@ -357,8 +415,9 @@ public class PlayerController2D : MonoBehaviour
         ControlEnabled = false;
         Invincible = true;
         externalMove = 0f;
-        Vel = Vector2.zero;
+        rb.SetVel(Vector2.zero);
         rb.simulated = false;
-        visual.transform.localScale = Vector3.one;
+        visual.sprite = idle;
+        IsGrounded = true;
     }
 }
