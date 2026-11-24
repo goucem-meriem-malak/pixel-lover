@@ -16,7 +16,8 @@ public abstract class EnemyBase : MonoBehaviour, IFireHittable
     protected SpriteRenderer sr;
     protected SpriteAnimator anim;
     protected int dir = -1;
-    float vy;
+    protected float vy;
+    protected bool grounded;
 
     public bool Dead { get; protected set; }
 
@@ -72,8 +73,8 @@ public abstract class EnemyBase : MonoBehaviour, IFireHittable
     /// <summary>Walk one physics step. Call from FixedUpdate.</summary>
     protected void StepMove(float hSpeed, bool turnAtCliff)
     {
-        bool grounded = OnGround();
-        if (grounded) vy = 0f; else vy -= 30f * Time.fixedDeltaTime;
+        grounded = OnGround();
+        if (grounded && vy <= 0f) vy = 0f; else vy -= 30f * Time.fixedDeltaTime;
 
         float dx = 0f;
         if (hSpeed > 0f)
@@ -194,8 +195,8 @@ public class Turtle : EnemyBase
         SetWalkCollider();
     }
 
-    void SetWalkCollider() { col.size = new Vector2(0.8f, 1.1f); col.offset = new Vector2(0f, 0.6f); }
-    void SetShellCollider() { col.size = new Vector2(0.9f, 0.6f); col.offset = new Vector2(0f, 0.35f); }
+    void SetWalkCollider() { col.size = new Vector2(0.95f, 0.65f); col.offset = new Vector2(0f, 0.36f); }
+    void SetShellCollider() { col.size = new Vector2(0.9f, 0.5f); col.offset = new Vector2(0f, 0.28f); }
 
     void FixedUpdate()
     {
@@ -266,6 +267,52 @@ public class Turtle : EnemyBase
     }
 }
 
+/// <summary>Frog: sits, then hops toward (or away from) the player. Stomp it, or burn it with a fireball.</summary>
+public class Frog : EnemyBase
+{
+    public float speed = 3f;
+
+    Sprite sitting, hopping;
+    float timer;
+
+    void Start()
+    {
+        sitting = SpriteFactory.Get("frog_1");
+        hopping = SpriteFactory.Get("frog_2");
+        if (anim != null) anim.enabled = false;
+        sr.sprite = sitting;
+        timer = 0.5f + Random.value;
+        dir = Random.value < 0.5f ? -1 : 1;
+    }
+
+    void FixedUpdate()
+    {
+        if (Dead) return;
+        timer -= Time.fixedDeltaTime;
+        if (grounded && vy <= 0f && timer <= 0f)
+        {
+            var lm = LevelManager.Instance;
+            if (lm != null && lm.PlayerTransform != null && Mathf.Abs(lm.PlayerTransform.position.x - transform.position.x) < 9f)
+                dir = lm.PlayerTransform.position.x < transform.position.x ? -1 : 1;
+            vy = 9.5f;
+            timer = 0.9f + Random.value * 0.9f;
+        }
+        bool airborne = !grounded || vy > 0f;
+        StepMove(airborne ? speed : 0f, false);
+        sr.sprite = (!grounded || vy > 0f) ? hopping : sitting;
+    }
+
+    protected override void OnPlayerTouch(PlayerController2D p)
+    {
+        if (p.IsStompingOn(col))
+        {
+            p.Bounce();
+            StartCoroutine(SquashAndDie());
+        }
+        else p.Hurt();
+    }
+}
+
 /// <summary>Piranha plant that pops out of a pipe. Stays hidden while the player stands next to the pipe.</summary>
 public class PiranhaPlant : MonoBehaviour, IFireHittable
 {
@@ -290,8 +337,38 @@ public class PiranhaPlant : MonoBehaviour, IFireHittable
         var a = GetComponent<SpriteAnimator>();
         a.SetFrames(SpriteFactory.Frames("plant_", 2), 4f);
         phaseTime = Random.value * 1.5f;
+
+        // The plant only shows above the pipe's rim: a sprite mask covers the space over the pipe, and the
+        // plant is visible inside it only. (Fixes the plant peeking out under short pipes while hidden.)
+        sr.maskInteraction = SpriteMaskInteraction.VisibleInsideMask;
+        maskObj = new GameObject("PlantMask");
+        maskObj.transform.SetParent(transform.parent, false);
+        maskObj.transform.position = new Vector3(transform.position.x, pipeTop + 2f, 0f);
+        maskObj.transform.localScale = new Vector3(3f, 4f, 1f);
+        var mask = maskObj.AddComponent<SpriteMask>();
+        mask.sprite = MaskSprite();
         SetHeight(0f);
     }
+
+    GameObject maskObj;
+    static Sprite maskSprite;
+
+    static Sprite MaskSprite()
+    {
+        if (maskSprite == null)
+        {
+            var tex = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            var px = new Color[16];
+            for (int i = 0; i < px.Length; i++) px[i] = Color.white;
+            tex.SetPixels(px);
+            tex.Apply();
+            tex.filterMode = FilterMode.Point;
+            maskSprite = Sprite.Create(tex, new Rect(0, 0, 4, 4), new Vector2(0.5f, 0.5f), 4f);   // 1 x 1 world unit
+        }
+        return maskSprite;
+    }
+
+    void OnDestroy() { if (maskObj != null) Destroy(maskObj); }
 
     bool PlayerNear()
     {
@@ -305,6 +382,7 @@ public class PiranhaPlant : MonoBehaviour, IFireHittable
     {
         transform.position = new Vector3(transform.position.x, pipeTop - Depth + k * Depth, 0f);
         col.enabled = k > 0.45f && !dead;
+        sr.enabled = k > 0.02f && !dead;
     }
 
     void Update()

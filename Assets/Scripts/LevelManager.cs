@@ -5,7 +5,7 @@ using UnityEngine;
 /// Builds each level from LevelGenerator data and runs the story:
 ///  * Player 1 (boy, a knight) plays an EARTH world: grass, hills, bushes, green pipes. He collects coins.
 ///  * Player 2 (girl, a princess) plays a CLOUD world: cloud ground, rainbows, sparkles, pink pipes.
-///    She collects flowers and finds growth mushrooms / fire flowers in the question blocks.
+///    She collects flowers and finds wings elixirs / fire flowers in the question blocks.
 ///  * After level 10 the boy walks to the flag, sits down, spends his coins on a ring, and gets his
 ///    invitation code. When the girl reaches him on her level 10 the proposal cutscene plays.
 /// </summary>
@@ -92,7 +92,7 @@ public class LevelManager : MonoBehaviour
         levelEnding = false;
         TouchInput.Reset();
 
-        data = LevelGenerator.Generate(n);
+        data = LevelGenerator.Generate(n, Role == PlayerRole.Boy);
         levelRoot = new GameObject("Level_" + n);
 
         SetupCamera();
@@ -174,14 +174,14 @@ public class LevelManager : MonoBehaviour
         }
     }
 
-    /// <summary>Growth mushroom / fire flower coming out of a block (girl only).</summary>
+    /// <summary>Wings elixir / fire flower coming out of a block (girl only).</summary>
     public void SpawnPowerUp(Vector3 blockCentre, PowerKind kind)
     {
         var go = new GameObject("PowerUp");
         go.transform.SetParent(levelRoot.transform, false);
         go.transform.position = blockCentre + new Vector3(0f, -0.2f, 0f);
         var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = SpriteFactory.Get(kind == PowerKind.Grow ? "item_mushroom" : "item_fireflower");
+        sr.sprite = SpriteFactory.Get(kind == PowerKind.Wings ? "item_wings" : "item_fireflower");
         var rb = go.AddComponent<Rigidbody2D>();
         rb.gravityScale = 3f;
         rb.freezeRotation = true;
@@ -242,6 +242,7 @@ public class LevelManager : MonoBehaviour
     /// <summary>Boy cleared level 10: walk to the flag, sit, buy a ring, register the room, show the code.</summary>
     IEnumerator BoyFinaleRoutine()
     {
+        ClearHazards();
         player.Invincible = true;
         player.ControlEnabled = false;
         TouchInput.Reset();
@@ -293,7 +294,18 @@ public class LevelManager : MonoBehaviour
     {
         if (levelEnding || player == null || player.IsDead || boyNpc == null) return;
         levelEnding = true;
+        ClearHazards();
         cutscene.Play(player, boyNpc, BoyName, PlayerName, RingId);
+    }
+
+    /// <summary>Removes every enemy and piranha plant (finale / proposal: nothing may lurk around the couple).</summary>
+    void ClearHazards()
+    {
+        if (levelRoot == null) return;
+        foreach (var e in levelRoot.GetComponentsInChildren<EnemyBase>(true))
+            if (e != null) Destroy(e.gameObject);
+        foreach (var p in levelRoot.GetComponentsInChildren<PiranhaPlant>(true))
+            if (p != null) Destroy(p.gameObject);
     }
 
     public void OnEndingFinished() { UIManager.Instance.ShowTheEnd(); }
@@ -544,7 +556,7 @@ public class LevelManager : MonoBehaviour
     {
         foreach (var e in data.enemies)
         {
-            var go = new GameObject(e.kind == EnemyKind.Cat ? "Cat" : "Turtle");
+            var go = new GameObject(e.kind == EnemyKind.Cat ? "Cat" : (e.kind == EnemyKind.Frog ? "Frog" : "Turtle"));
             go.transform.SetParent(levelRoot.transform, false);
             go.transform.position = new Vector3(e.x, e.y, 0f);
             var sr = go.AddComponent<SpriteRenderer>();
@@ -563,10 +575,17 @@ public class LevelManager : MonoBehaviour
                 cat.speed = e.speed;
                 cat.variant = e.variant;
             }
+            else if (e.kind == EnemyKind.Frog)
+            {
+                bc.size = new Vector2(0.9f, 0.8f);
+                bc.offset = new Vector2(0f, 0.45f);
+                var f = go.AddComponent<Frog>();
+                f.speed = 2.6f + e.speed * 0.4f;
+            }
             else
             {
-                bc.size = new Vector2(0.8f, 1.1f);
-                bc.offset = new Vector2(0f, 0.6f);
+                bc.size = new Vector2(0.95f, 0.65f);
+                bc.offset = new Vector2(0f, 0.36f);
                 var t = go.AddComponent<Turtle>();
                 t.speed = e.speed;
                 t.purple = (e.variant % 2) == 1;

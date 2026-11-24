@@ -3,7 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// Brick or question block. Jump into it from below and it bumps (just like in Super Mario):
-/// question blocks release a coin/flower or a power-up and turn into a used block, a big girl
+/// question blocks release a coin/flower or a power-up and turn into a used block, a girl with wings
 /// smashes bricks, and anything standing on top of the block is knocked out.
 /// </summary>
 public class Block : MonoBehaviour
@@ -27,7 +27,7 @@ public class Block : MonoBehaviour
         if (busy) return;
         bool hasContent = content != BlockContent.None && !used;
 
-        if (type == BlockType.Brick && p.IsBig && !hasContent)
+        if (type == BlockType.Brick && p.HasWings && !hasContent)
         {
             Smash();
             return;
@@ -53,7 +53,7 @@ public class Block : MonoBehaviour
         else // Power: a power-up for the girl, a handful of coins for the boy
         {
             if (lm.Role == PlayerRole.Girl)
-                lm.SpawnPowerUp(home, p.Form == PowerState.Small ? PowerKind.Grow : PowerKind.Fire);
+                lm.SpawnPowerUp(home, p.Form == PowerState.Small ? PowerKind.Wings : PowerKind.Fire);
             else
                 lm.PopCoins(above, 3);
         }
@@ -127,7 +127,7 @@ public class Debris : MonoBehaviour
 }
 
 /// <summary>
-/// Growth mushroom / fire flower that pops out of a block, then slides along the ground until the
+/// Wings elixir / fire flower that pops out of a block, then slides along the ground until the
 /// girl picks it up. (Only the girl gets power-ups.)
 /// </summary>
 public class PowerUp : MonoBehaviour

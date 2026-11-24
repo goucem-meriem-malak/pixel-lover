@@ -270,7 +270,7 @@ public class UIManager : MonoBehaviour
         hudCount.Set("X " + coins);
         hudLevel.Set("LEVEL " + level + "/" + total);
         hudForm.gameObject.SetActive(form != PowerState.Small);
-        if (form != PowerState.Small) hudForm.sprite = SpriteFactory.Get(form == PowerState.Fire ? "item_fireflower" : "item_mushroom");
+        if (form != PowerState.Small) hudForm.sprite = SpriteFactory.Get(form == PowerState.Fire ? "item_fireflower" : "item_wings");
         fireButtonObj.SetActive(form == PowerState.Fire);
     }
 
@@ -719,7 +719,7 @@ public class UIManager : MonoBehaviour
         hudIcon = Pic(safe, "coin_1", 3f, tl, new Vector2(28f, -23f));
         hudCount = Label(safe, "X 0", 4, Color.white, tl, new Vector2(88f, -30f));
         hudLevel = Label(safe, "LEVEL 1/10", 3, Color.white, tl, new Vector2(240f, -35f));
-        hudForm = Pic(safe, "item_mushroom", 2.5f, tl, new Vector2(500f, -27f));
+        hudForm = Pic(safe, "item_wings", 2.5f, tl, new Vector2(500f, -27f));
 
         Btn(safe, "MENU", tr, new Vector2(-16f, -14f), new Vector2(150f, 56f), BtnGray, 3, () => LevelManager.Instance.ReturnToMenu());
         skipButton = Btn(safe, "SKIP >>", tr, new Vector2(-16f, -80f), new Vector2(150f, 56f), BtnGold, 3, () => LevelManager.Instance.DebugSkipLevel());

@@ -29,7 +29,7 @@ public static class TouchInput
 /// the keyboard: A/D or arrows, Space/W/Up to jump, F to throw a fireball.
 ///
 /// The boy is a knight and the girl a princess. Only the girl uses power-ups:
-/// Small -> Big (growth mushroom) -> Fire (fire flower, throws fireballs).
+/// Small -> Wings (wings elixir: she grows a pair of wings, no flying) -> Fire (fire flower, throws fireballs).
 /// Jumping into a block from below makes it bump (OnCollisionEnter2D).
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
@@ -47,15 +47,14 @@ public class PlayerController2D : MonoBehaviour
     [Header("Ground check (linecasts)")]
     public float groundCheckDistance = 0.12f;
 
-    [Header("Body (small size; the big form scales it)")]
+    [Header("Body")]
     public Vector2 bodySize = new Vector2(0.75f, 1.45f);
-    public float bigScale = 1.3f;
     public float killY = -9f;
 
     public PlayerRole Role { get; private set; }
     public PowerState Form { get; private set; }
     public PlayerPose Pose { get; private set; }
-    public bool IsBig { get { return Form != PowerState.Small; } }
+    public bool HasWings { get { return Form != PowerState.Small; } }
     public bool ControlEnabled { get; set; }
     public bool Invincible { get; set; }
     public bool IsDead { get; private set; }
@@ -66,14 +65,13 @@ public class PlayerController2D : MonoBehaviour
 
     Rigidbody2D rb;
     BoxCollider2D col;
-    SpriteRenderer visual;
+    SpriteRenderer visual, wingsVisual;
     ContactFilter2D filter;
     readonly RaycastHit2D[] hits = new RaycastHit2D[4];
 
     Sprite idle, jump, sit;
     Sprite[] walk;
 
-    float sizeScale = 1f;
     float inputX, externalMove;
     bool jumpHeld, jumpHeldPrev, jumping;
     float jumpBufferCounter, coyoteCounter, invulnTimer, fireCooldown, appliedVy;
@@ -101,6 +99,14 @@ public class PlayerController2D : MonoBehaviour
         visual = v.AddComponent<SpriteRenderer>();
         visual.sortingOrder = 10;
 
+        // wings (girl only, shown after the first elixir): drawn behind her body
+        var w = new GameObject("Wings");
+        w.transform.SetParent(transform, false);
+        w.transform.localPosition = new Vector3(0f, 0.9f, 0f);
+        wingsVisual = w.AddComponent<SpriteRenderer>();
+        wingsVisual.sortingOrder = 9;
+        wingsVisual.enabled = false;
+
         filter = new ContactFilter2D();
         filter.useTriggers = false;
         filter.useLayerMask = false;
@@ -115,29 +121,28 @@ public class PlayerController2D : MonoBehaviour
     {
         Role = role;
         string who = role == PlayerRole.Boy ? "knight" : "princess";
+        wingsVisual.sprite = SpriteFactory.Get("wings_1");
         idle = SpriteFactory.Get(who + "_idle");
         jump = SpriteFactory.Get(who + "_jump");
         walk = new[] { SpriteFactory.Get(who + "_walk1"), idle, SpriteFactory.Get(who + "_walk2"), idle };
         sit = role == PlayerRole.Boy ? SpriteFactory.Get("knight_sit") : idle;
         visual.sprite = idle;
-        NameTag.Create(transform, displayName, () => 1.7f * sizeScale + 0.12f);
+        NameTag.Create(transform, displayName, () => 1.7f + 0.12f);
     }
 
     // ------------------------------------------------------------------ size / power-ups
 
     void ApplySize()
     {
-        Vector2 s = bodySize * sizeScale;
+        Vector2 s = bodySize;
         col.size = s;
         col.offset = new Vector2(0f, s.y * 0.5f);
-        if (visual != null) visual.transform.localScale = new Vector3(sizeScale, sizeScale, 1f);
     }
 
     void SetForm(PowerState f)
     {
         Form = f;
-        sizeScale = f == PowerState.Small ? 1f : bigScale;
-        ApplySize();
+        if (wingsVisual != null) wingsVisual.enabled = f != PowerState.Small;
         visual.color = f == PowerState.Fire ? new Color(1f, 0.82f, 0.74f) : Color.white;
     }
 
@@ -146,8 +151,8 @@ public class PlayerController2D : MonoBehaviour
     {
         if (Role != PlayerRole.Girl || IsDead) return;
         PowerState before = Form;
-        if (Form == PowerState.Small) SetForm(PowerState.Big);
-        else if (kind == PowerKind.Fire) SetForm(PowerState.Fire);
+        if (Form == PowerState.Small) SetForm(PowerState.Wings);              // first elixir: wings
+        else if (kind == PowerKind.Fire) SetForm(PowerState.Fire);            // next one: fireballs
         if (Form != before)
         {
             invulnTimer = Mathf.Max(invulnTimer, 0.6f);
@@ -155,12 +160,12 @@ public class PlayerController2D : MonoBehaviour
         }
     }
 
-    /// <summary>Damage: Fire -> Big -> Small -> dead.</summary>
+    /// <summary>Damage: Fire -> Wings -> Small -> dead.</summary>
     public void Hurt()
     {
         if (IsDead || Invincible || invulnTimer > 0f) return;
-        if (Form == PowerState.Fire) { SetForm(PowerState.Big); invulnTimer = 1.5f; }
-        else if (Form == PowerState.Big) { SetForm(PowerState.Small); invulnTimer = 1.5f; }
+        if (Form == PowerState.Fire) { SetForm(PowerState.Wings); invulnTimer = 1.5f; }
+        else if (Form == PowerState.Wings) { SetForm(PowerState.Small); invulnTimer = 1.5f; }
         else Die();
         if (LevelManager.Instance != null) LevelManager.Instance.UpdateHud();
     }
@@ -222,13 +227,14 @@ public class PlayerController2D : MonoBehaviour
         {
             fireCooldown = 0.35f;
             LevelManager.Instance.SpawnFireball(
-                new Vector2(transform.position.x + facing * 0.7f, transform.position.y + 0.9f * sizeScale), facing);
+                new Vector2(transform.position.x + facing * 0.7f, transform.position.y + 0.9f), facing);
         }
 
         if (invulnTimer > 0f)
         {
             invulnTimer -= Time.deltaTime;
             visual.enabled = invulnTimer <= 0f || ((int)(Time.time * 20f) % 2 == 0);
+            wingsVisual.enabled = Form != PowerState.Small && visual.enabled;
         }
 
         if (transform.position.y < killY) Die();
@@ -349,6 +355,7 @@ public class PlayerController2D : MonoBehaviour
     {
         visual.enabled = true;
         visual.sprite = jump;
+        wingsVisual.enabled = false;
         visual.color = new Color(1f, 0.6f, 0.6f);
         Vector3 baseLocal = visual.transform.localPosition;
         float t = 0f;

@@ -4,15 +4,15 @@ using UnityEditor.Build;
 using UnityEngine;
 
 /// <summary>
-/// Makes the crown logo (Assets/Icons/AppIcon.png) the app icon.
-/// Runs once automatically when the project opens; you can re-run it any time from the menu
-/// Pixel Love > Apply App Icon.
+/// Makes the crown logo the app icon. Runs once automatically when the project opens
+/// (version 2: also fills the Android Adaptive + Round icons, which is what modern phones use,
+/// so the crown is no longer cropped or zoomed). Re-run any time from Pixel Love > Apply App Icon.
 /// </summary>
 [InitializeOnLoad]
 public static class AppIconSetup
 {
-    const string IconPath = "Assets/Icons/AppIcon.png";
-    const string DoneKey = "PixelLove.AppIconApplied.v1";
+    const string Dir = "Assets/Icons/";
+    const string DoneKey = "PixelLove.AppIconApplied.v2";
 
     static AppIconSetup()
     {
@@ -23,34 +23,55 @@ public static class AppIconSetup
     [MenuItem("Pixel Love/Apply App Icon")]
     static void ApplyFromMenu() { Apply(true); }
 
+    static Texture2D Load(string file)
+    {
+        string path = Dir + file;
+        var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+        if (importer != null)
+        {
+            bool dirty = importer.filterMode != FilterMode.Point || importer.mipmapEnabled
+                         || importer.textureCompression != TextureImporterCompression.Uncompressed
+                         || importer.npotScale != TextureImporterNPOTScale.None || !importer.isReadable;
+            if (dirty)
+            {
+                importer.filterMode = FilterMode.Point;
+                importer.mipmapEnabled = false;
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.npotScale = TextureImporterNPOTScale.None;
+                importer.isReadable = true;
+                importer.SaveAndReimport();
+            }
+        }
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+    }
+
     static bool Apply(bool verbose)
     {
-        var icon = AssetDatabase.LoadAssetAtPath<Texture2D>(IconPath);
+        var icon = Load("AppIcon.png");
+        var fg = Load("AppIcon_Foreground.png");
+        var bg = Load("AppIcon_Background.png");
         if (icon == null)
         {
-            if (verbose) Debug.LogError("[Pixel Love] " + IconPath + " not found. Copy the whole Assets/Icons folder into your project.");
+            if (verbose) Debug.LogError("[Pixel Love] Assets/Icons/AppIcon.png not found. Copy the whole Assets/Icons folder into your project.");
             return false;
         }
 
-        // pixel art must stay sharp: no filtering, no compression artefacts
-        var importer = AssetImporter.GetAtPath(IconPath) as TextureImporter;
-        if (importer != null && (importer.filterMode != FilterMode.Point || importer.mipmapEnabled))
-        {
-            importer.filterMode = FilterMode.Point;
-            importer.mipmapEnabled = false;
-            importer.SaveAndReimport();
-            icon = AssetDatabase.LoadAssetAtPath<Texture2D>(IconPath);
-        }
+        // classic square icon for every platform
+        SetLegacy(NamedBuildTarget.Android, icon);
+        SetLegacy(NamedBuildTarget.iOS, icon);
+        SetLegacy(NamedBuildTarget.Standalone, icon);
 
-        SetFor(NamedBuildTarget.Android, icon);
-        SetFor(NamedBuildTarget.iOS, icon);
-        SetFor(NamedBuildTarget.Standalone, icon);
+        // Android 8+ adaptive icon (background + foreground layers) and the round icon
+        if (fg != null && bg != null) SetAndroidKind("Adaptive", bg, fg);
+        SetAndroidKind("Round", icon);
+        SetAndroidKind("Legacy", icon);
+
         AssetDatabase.SaveAssets();
-        if (verbose) Debug.Log("[Pixel Love] App icon applied. Rebuild the APK to see it on the phone.");
+        if (verbose) Debug.Log("[Pixel Love] App icon applied. Rebuild the APK, and uninstall the old app first so the phone refreshes its icon.");
         return true;
     }
 
-    static void SetFor(NamedBuildTarget target, Texture2D icon)
+    static void SetLegacy(NamedBuildTarget target, Texture2D icon)
     {
         try
         {
@@ -63,6 +84,34 @@ public static class AppIconSetup
         catch (System.Exception e)
         {
             Debug.LogWarning("[Pixel Love] Could not set the icon for " + target.TargetName + ": " + e.Message);
+        }
+    }
+
+    /// <summary>Fills one Android icon kind (Adaptive takes background then foreground; the others one texture).</summary>
+    static void SetAndroidKind(string kindName, params Texture2D[] textures)
+    {
+        try
+        {
+            var kindType = typeof(PlayerSettings).Assembly.GetType("UnityEditor.Android.AndroidPlatformIconKind");
+            if (kindType == null) return;
+            var prop = kindType.GetProperty(kindName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            if (prop == null) return;
+            var kind = prop.GetValue(null, null) as PlatformIconKind;
+            if (kind == null) return;
+            var target = NamedBuildTarget.Android;
+            PlatformIcon[] icons = PlayerSettings.GetPlatformIcons(target, kind);
+            if (icons == null) return;
+            foreach (var pi in icons)
+            {
+                var layers = new Texture2D[pi.maxLayerCount];
+                for (int i = 0; i < layers.Length; i++) layers[i] = textures[Mathf.Min(i, textures.Length - 1)];
+                pi.SetTextures(layers);
+            }
+            PlayerSettings.SetPlatformIcons(target, kind, icons);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning("[Pixel Love] Android " + kindName + " icon not set: " + e.Message);
         }
     }
 }

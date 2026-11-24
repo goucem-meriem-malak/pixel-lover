@@ -1,12 +1,12 @@
 using UnityEngine;
 
 public enum PlayerRole { Boy, Girl }
-public enum PowerState { Small, Big, Fire }
+public enum PowerState { Small, Wings, Fire }
 public enum PlayerPose { Normal, Sit, Kneel }
 public enum BlockType { Question, Brick }
 public enum BlockContent { None, Coin, Power }
-public enum EnemyKind { Cat, Turtle }
-public enum PowerKind { Grow, Fire }
+public enum EnemyKind { Cat, Turtle, Frog }
+public enum PowerKind { Wings, Fire }
 
 /// <summary>What the girl's phone learns about the boy's room.</summary>
 public class RoomInfo

@@ -1,48 +1,18 @@
-﻿# Unity generated (rebuilt automatically, never commit)
 [Ll]ibrary/
 [Tt]emp/
 [Oo]bj/
 [Bb]uild/
 [Bb]uilds/
 [Ll]ogs/
-[Uu]ser[Ss]ettings/
-[Mm]emoryCaptures/
-[Rr]ecordings/
-
-# IDE files
+[Uu]serSettings/
 .vs/
 .idea/
-.vscode/
 *.csproj
 *.sln
-*.suo
-*.user
-*.pidb
-*.booproj
-
-# Build outputs
 *.apk
 *.aab
-*.unitypackage
-*.app
-*.pdb
-*.mdb
-
-# Signing keys: NEVER upload these
-*.keystore
-*.jks
-
-# Firebase config (contains your project identifiers)
+# Firebase config contains project identifiers; keep it out of public repos
 Assets/google-services.json
 Assets/GoogleService-Info.plist
 Assets/StreamingAssets/google-services-desktop.json
-
-# Misc
-sysinfo.txt
-crashlytics-build.properties
-.DS_Store
-Thumbs.db
-
-.fake
-Assets/Plugins/Android/FirebaseApp.androidlib/res/values/google-services.xml
-Assets/google-services.json
+docs/SETUP.md

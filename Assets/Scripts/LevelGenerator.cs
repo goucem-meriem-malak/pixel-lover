@@ -35,7 +35,7 @@ public static class LevelGenerator
 {
     static int totalCoins = -1;
 
-    public static LevelData Generate(int level)
+    public static LevelData Generate(int level, bool hard = false)
     {
         var rnd = new System.Random(4242 + level * 7919);
         var d = new LevelData();
@@ -54,6 +54,7 @@ public static class LevelGenerator
         for (int i = 0; i < 4; i++) d.coins.Add(new Vector2(3f + i, top + 1.3f));
         x = 12f;
 
+        var runs = new List<Vector3>();   // (x0, x1, top) of every decorated run
         float prevX1 = 12f, prevTop = 0f;
         bool prevTailClear = false;
 
@@ -87,6 +88,7 @@ public static class LevelGenerator
             x += gap;
             float w = rnd.Next(5, 10); // 5..9
             AddGround(d, x, x + w, newTop);
+            runs.Add(new Vector3(x, x + w, newTop));
             prevTailClear = Decorate(d, rnd, x, x + w, newTop, level, diff) && w >= 6f;
             prevX1 = x + w;
             prevTop = newTop;
@@ -96,6 +98,9 @@ public static class LevelGenerator
 
         // Final plaza (flat): flag, castle, the place where the boy waits
         d.plazaStart = x;
+        if (hard) MakeHarder(d, runs, level, diff);
+        // keep the way to the plaza clear: no enemy within 5 units of the castle area
+        d.enemies.RemoveAll(e => e.x > x - 5f);
         AddGround(d, x, x + 18f, top);
         d.flagX = x + 11f;
         d.castleX = x + 15.5f;
@@ -104,6 +109,41 @@ public static class LevelGenerator
         for (int i = 0; i < 5; i++) d.coins.Add(new Vector2(x + 2.5f + i, top + 1.3f));
 
         return d;
+    }
+
+    /// <summary>
+    /// Boy-only difficulty bump. It never touches the terrain (so every level stays beatable and the coin
+    /// count stays the same): enemies are faster, more runs get an enemy, and more pipes have a plant.
+    /// </summary>
+    static void MakeHarder(LevelData d, List<Vector3> runs, int level, float diff)
+    {
+        var rnd = new System.Random(900 + level * 31);
+        foreach (var e in d.enemies) e.speed *= 1.25f;
+        foreach (var p in d.pipes)
+            if (level >= 2 && !p.plant && rnd.NextDouble() < 0.45) p.plant = true;
+
+        for (int i = 1; i < runs.Count - 1; i++)
+        {
+            Vector3 r = runs[i];
+            float w = r.y - r.x;
+            if (w < 6f || level < 2) continue;
+            bool busy = false;
+            foreach (var e in d.enemies) if (e.x > r.x - 0.5f && e.x < r.y + 0.5f) busy = true;
+            if (busy) continue;
+            bool hasPipe = false;
+            foreach (var p in d.pipes) if (p.x > r.x - 1f && p.x < r.y + 1f) hasPipe = true;
+            if (rnd.NextDouble() > 0.30 + 0.25 * diff) continue;
+            float ex = hasPipe ? r.y - 2f : (r.x + r.y) * 0.5f;
+            bool turtle = rnd.NextDouble() < 0.3;
+            bool frog = !turtle && rnd.NextDouble() < 0.5;
+            d.enemies.Add(new EnemySpawn
+            {
+                x = ex, y = r.z,
+                kind = turtle ? EnemyKind.Turtle : (frog ? EnemyKind.Frog : EnemyKind.Cat),
+                variant = rnd.Next(4),
+                speed = (1.6f + 1.4f * diff) * 1.1f
+            });
+        }
     }
 
     /// <summary>Coins the boy can collect in one level (coin blocks count 1, power blocks 3).</summary>
@@ -197,10 +237,12 @@ public static class LevelGenerator
                 float ex = count == 1 ? mid : (i == 0 ? x0 + 2.0f : x1 - 2.0f);
                 if (pipe) ex = pipeX > mid ? x0 + 2.0f : x1 - 2.0f;
                 bool turtle = level >= 2 && rnd.NextDouble() < 0.25 + 0.30 * diff;
+                // frogs replace some cats (picked by a hash, so the random sequence of the level is unchanged)
+                bool frog = !turtle && level >= 2 && ((int)(ex * 7f) + level * 13) % 100 < 30;
                 d.enemies.Add(new EnemySpawn
                 {
                     x = ex, y = top,
-                    kind = turtle ? EnemyKind.Turtle : EnemyKind.Cat,
+                    kind = turtle ? EnemyKind.Turtle : (frog ? EnemyKind.Frog : EnemyKind.Cat),
                     variant = rnd.Next(4),
                     speed = (1.3f + 1.4f * diff) * (turtle ? 0.8f : 1f)
                 });

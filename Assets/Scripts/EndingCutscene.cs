@@ -45,7 +45,7 @@ public class EndingCutscene : MonoBehaviour
         root = lm.LevelRoot;
         var boySr = boy.GetComponent<SpriteRenderer>();
         Transform girlVisual = girl.transform.Find("Visual");
-        float girlScale = girl.IsBig ? 1.3f : 1f;
+        const float girlScale = 1f;
 
         TouchInput.Reset();
         ui.HideTouchControls();

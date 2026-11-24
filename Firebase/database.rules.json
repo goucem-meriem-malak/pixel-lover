@@ -1,0 +1,18 @@
+{
+  "rules": {
+    "rooms": {
+      ".read": false,
+      "$code": {
+        ".read": true,
+        ".write": "!data.exists()",
+        ".validate": "$code.matches(/^[A-Z0-9]{6}$/) && newData.hasChildren(['roomCode', 'boyFinished', 'createdAt'])",
+        "roomCode": { ".validate": "newData.isString() && newData.val() == $code" },
+        "boyFinished": { ".validate": "newData.isBoolean()" },
+        "createdAt": { ".validate": "newData.isNumber()" },
+        "boyName": { ".validate": "newData.isString() && newData.val().length <= 16" },
+        "ringId": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 4" },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}
