@@ -90,7 +90,7 @@ Codes use `A-Z` and `2-9` only, so they are easy to read aloud. Rooms can be cre
 1. Tick **Debug Skip Button** on the `LevelManager` component (Play mode stopped), rebuild, and install on both phones.
 2. **Phone A:** Player 1, type a name, press **SKIP >>** until level 10. The knight walks to the flag and sits. Pick a ring in the shop. A 6-character code appears.
 3. Check the Firebase **Data** tab: a `rooms` entry with that code should be there.
-4. **Phone B:** Player 2, type a name and the code, tap **JOIN HIM**, skip to level 10, and walk right. The proposal plays.
+4. **Phone B:** Player 2, type a name and the code, tap **JOIN HIM**, skip to level 10, and walk right. The surprise plays.
 
 ## 5. Troubleshooting
 

@@ -15,4 +15,5 @@
 Assets/google-services.json
 Assets/GoogleService-Info.plist
 Assets/StreamingAssets/google-services-desktop.json
-docs/SETUP.md
+
+docs\SETUP.md

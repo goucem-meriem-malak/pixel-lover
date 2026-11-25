@@ -93,6 +93,7 @@ public class LevelManager : MonoBehaviour
         TouchInput.Reset();
 
         data = LevelGenerator.Generate(n, Role == PlayerRole.Boy);
+        if (Role == PlayerRole.Girl) ThinOutPotions(data);
         levelRoot = new GameObject("Level_" + n);
 
         SetupCamera();
@@ -231,9 +232,9 @@ public class LevelManager : MonoBehaviour
 
     IEnumerator NextLevelRoutine()
     {
-        player.Invincible = true;
-        player.ControlEnabled = false;
-        TouchInput.Reset();
+        yield return FlagSlide();
+        player.Face(1);
+        yield return player.WalkTo(data.castleX - 0.5f);     // walk to the castle like Mario
         UIManager.Instance.ShowToast("LEVEL " + CurrentLevel + " CLEAR!", 1.4f);
         yield return new WaitForSeconds(1.4f);
         LoadLevel(CurrentLevel + 1);
@@ -243,11 +244,7 @@ public class LevelManager : MonoBehaviour
     IEnumerator BoyFinaleRoutine()
     {
         ClearHazards();
-        player.Invincible = true;
-        player.ControlEnabled = false;
-        TouchInput.Reset();
-        UIManager.Instance.HideTouchControls();
-
+        yield return FlagSlide();
         yield return player.WalkTo(WaitX);
         player.SitDown();
         UIManager.Instance.ShowToast("NOW WE WAIT FOR HER...", 2f);
@@ -296,6 +293,19 @@ public class LevelManager : MonoBehaviour
         levelEnding = true;
         ClearHazards();
         cutscene.Play(player, boyNpc, BoyName, PlayerName, RingId);
+    }
+
+    /// <summary>The girl's question blocks mostly give flowers: keep the first block of each level and then only every 4th potion.</summary>
+    static void ThinOutPotions(LevelData d)
+    {
+        int seen = 0;
+        foreach (var b in d.blocks)
+        {
+            if (b.content != BlockContent.Power) continue;
+            bool keep = seen % 4 == 0;
+            seen++;
+            if (!keep) b.content = BlockContent.Coin;
+        }
     }
 
     /// <summary>Removes every enemy and piranha plant (finale / proposal: nothing may lurk around the couple).</summary>
@@ -593,19 +603,35 @@ public class LevelManager : MonoBehaviour
         }
     }
 
+    Transform flagCloth;
+
+    /// <summary>Player grabs the pole: he/she slides down and the flag comes down with them.</summary>
+    IEnumerator FlagSlide()
+    {
+        player.Invincible = true;
+        player.ControlEnabled = false;
+        TouchInput.Reset();
+        UIManager.Instance.HideTouchControls();
+        float topY = data.flagTop + 4.3f, lowY = data.flagTop + 0.8f;
+        yield return player.SlideDownPole(data.flagX, data.flagTop, k =>
+        {
+            if (flagCloth != null) flagCloth.position = new Vector3(flagCloth.position.x, Mathf.Lerp(topY, lowY, k), 0f);
+        });
+    }
+
     void BuildFlagCastleGoal()
     {
         var root = levelRoot.transform;
         float top = data.flagTop;
         Spr("Castle", root, IsSky ? "castle_pink" : "castle_stone", new Vector2(data.castleX, top), -2);
         Spr("FlagPole", root, "flag_pole", new Vector2(data.flagX, top), 1);
-        Spr("FlagCloth", root, "flag_cloth", new Vector2(data.flagX + 0.6f, top + 4.3f), 1);
+        flagCloth = Spr("FlagCloth", root, "flag_cloth", new Vector2(data.flagX + 0.6f, top + 4.3f), 1).transform;
 
         // The girl never "clears" level 10 with a goal: she triggers the proposal instead.
         if (CurrentLevel == TotalLevels && Role == PlayerRole.Girl) return;
 
         // The boy on level 10 starts his finale a few steps before the flag, then walks the rest.
-        float goalX = CurrentLevel == TotalLevels ? data.flagX - 5f : data.flagX;
+        float goalX = data.flagX;
         var goal = new GameObject("Goal");
         goal.transform.SetParent(root, false);
         goal.transform.position = new Vector3(goalX, top + 4f, 0f);

@@ -64,6 +64,13 @@ public abstract class EnemyBase : MonoBehaviour, IFireHittable
         return AnySolid(Physics2D.Raycast(o, Vector2.down, filter, hits, 0.6f));
     }
 
+    /// <summary>True when there is solid ground under the point dx in front of the body's centre.</summary>
+    protected bool SolidBelowAt(float dx)
+    {
+        Bounds b = col.bounds;
+        return AnySolid(Physics2D.Raycast(new Vector2(b.center.x + dx, b.min.y + 0.2f), Vector2.down, filter, hits, 0.8f));
+    }
+
     protected bool OnGround()
     {
         Bounds b = col.bounds;
@@ -270,7 +277,7 @@ public class Turtle : EnemyBase
 /// <summary>Frog: sits, then hops toward (or away from) the player. Stomp it, or burn it with a fireball.</summary>
 public class Frog : EnemyBase
 {
-    public float speed = 3f;
+    public float speed = 2.4f;
 
     Sprite sitting, hopping;
     float timer;
@@ -294,8 +301,11 @@ public class Frog : EnemyBase
             var lm = LevelManager.Instance;
             if (lm != null && lm.PlayerTransform != null && Mathf.Abs(lm.PlayerTransform.position.x - transform.position.x) < 9f)
                 dir = lm.PlayerTransform.position.x < transform.position.x ? -1 : 1;
-            vy = 9.5f;
-            timer = 0.9f + Random.value * 0.9f;
+            // short hops that never leave the ground: look where the hop would land, turn round if it is a drop
+            bool safe = SolidBelowAt(dir * 0.6f) && SolidBelowAt(dir * 1.2f);
+            if (!safe) { dir = -dir; safe = SolidBelowAt(dir * 0.6f) && SolidBelowAt(dir * 1.2f); }
+            if (safe) vy = 7f;
+            timer = 0.8f + Random.value * 0.8f;
         }
         bool airborne = !grounded || vy > 0f;
         StepMove(airborne ? speed : 0f, false);

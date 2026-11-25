@@ -39,9 +39,12 @@ public static class LevelGenerator
     {
         var rnd = new System.Random(4242 + level * 7919);
         var d = new LevelData();
+        // Boy levels are a lot harder than the girl's: his curve starts higher and ends past 1,
+        // hers is gentler (about 70%). Gaps never exceed 3 units, so every level stays finishable.
         float diff = (level - 1) / 9f;               // 0 .. 1
-        int targetLength = 60 + level * 10;
-        int gapMax = level < 4 ? 2 : 3;
+        diff = hard ? Mathf.Min(1.15f, diff + 0.30f) : diff * 0.70f;
+        int targetLength = 60 + level * 10 + (hard ? 12 + level * 3 : 0);
+        int gapMax = (hard ? level < 2 : level < 4) ? 2 : 3;
 
         float x = 0f, top = 0f;
 
@@ -98,7 +101,9 @@ public static class LevelGenerator
 
         // Final plaza (flat): flag, castle, the place where the boy waits
         d.plazaStart = x;
+        EnsureFrogs(d, level);
         if (hard) MakeHarder(d, runs, level, diff);
+        LiftCoinsOffStairs(d);
         // keep the way to the plaza clear: no enemy within 5 units of the castle area
         d.enemies.RemoveAll(e => e.x > x - 5f);
         AddGround(d, x, x + 18f, top);
@@ -118,9 +123,9 @@ public static class LevelGenerator
     static void MakeHarder(LevelData d, List<Vector3> runs, int level, float diff)
     {
         var rnd = new System.Random(900 + level * 31);
-        foreach (var e in d.enemies) e.speed *= 1.25f;
+        foreach (var e in d.enemies) e.speed *= 1.35f;
         foreach (var p in d.pipes)
-            if (level >= 2 && !p.plant && rnd.NextDouble() < 0.45) p.plant = true;
+            if (level >= 2 && !p.plant && rnd.NextDouble() < 0.7) p.plant = true;
 
         for (int i = 1; i < runs.Count - 1; i++)
         {
@@ -132,17 +137,48 @@ public static class LevelGenerator
             if (busy) continue;
             bool hasPipe = false;
             foreach (var p in d.pipes) if (p.x > r.x - 1f && p.x < r.y + 1f) hasPipe = true;
-            if (rnd.NextDouble() > 0.30 + 0.25 * diff) continue;
+            if (rnd.NextDouble() > 0.55 + 0.30 * diff) continue;
             float ex = hasPipe ? r.y - 2f : (r.x + r.y) * 0.5f;
             bool turtle = rnd.NextDouble() < 0.3;
-            bool frog = !turtle && rnd.NextDouble() < 0.5;
+            bool frog = !turtle && rnd.NextDouble() < 0.45;
             d.enemies.Add(new EnemySpawn
             {
                 x = ex, y = r.z,
                 kind = turtle ? EnemyKind.Turtle : (frog ? EnemyKind.Frog : EnemyKind.Cat),
                 variant = rnd.Next(4),
-                speed = (1.6f + 1.4f * diff) * 1.1f
+                speed = (1.6f + 1.4f * diff) * 1.2f
             });
+        }
+    }
+
+    /// <summary>Every level from 2 on gets at least two frogs (cats become frogs), three from level 6.</summary>
+    static void EnsureFrogs(LevelData d, int level)
+    {
+        if (level < 2) return;
+        int want = level >= 6 ? 3 : 2;
+        int have = 0;
+        foreach (var e in d.enemies) if (e.kind == EnemyKind.Frog) have++;
+        for (int i = 0; i < d.enemies.Count && have < want; i += 2)
+            if (d.enemies[i].kind == EnemyKind.Cat) { d.enemies[i].kind = EnemyKind.Frog; have++; }
+        for (int i = 1; i < d.enemies.Count && have < want; i += 2)
+            if (d.enemies[i].kind == EnemyKind.Cat) { d.enemies[i].kind = EnemyKind.Frog; have++; }
+    }
+
+    /// <summary>Coins that would sit inside a stair block (so they could not be collected) are moved above it.</summary>
+    static void LiftCoinsOffStairs(LevelData d)
+    {
+        for (int c = 0; c < d.coins.Count; c++)
+        {
+            Vector2 p = d.coins[c];
+            foreach (var s in d.stairs)
+                for (int i = 0; i < s.steps; i++)
+                {
+                    float left = s.x0 + i - 0.5f, right = s.x0 + i + 1.5f;
+                    float stepTop = s.top + i + 1;
+                    if (p.x > left && p.x < right && p.y < stepTop + 0.8f && p.y > s.top - 0.5f)
+                        p.y = stepTop + 0.9f;
+                }
+            d.coins[c] = p;
         }
     }
 
@@ -164,7 +200,7 @@ public static class LevelGenerator
         if (totalCoins < 0)
         {
             int sum = 0;
-            for (int l = 1; l <= LevelManager.TotalLevels; l++) sum += CoinsIn(Generate(l));
+            for (int l = 1; l <= LevelManager.TotalLevels; l++) sum += CoinsIn(Generate(l, true));
             totalCoins = sum;
         }
         return totalCoins;
@@ -238,7 +274,7 @@ public static class LevelGenerator
                 if (pipe) ex = pipeX > mid ? x0 + 2.0f : x1 - 2.0f;
                 bool turtle = level >= 2 && rnd.NextDouble() < 0.25 + 0.30 * diff;
                 // frogs replace some cats (picked by a hash, so the random sequence of the level is unchanged)
-                bool frog = !turtle && level >= 2 && ((int)(ex * 7f) + level * 13) % 100 < 30;
+                bool frog = !turtle && ((int)(ex * 7f) + level * 13) % 100 < 40;
                 d.enemies.Add(new EnemySpawn
                 {
                     x = ex, y = top,

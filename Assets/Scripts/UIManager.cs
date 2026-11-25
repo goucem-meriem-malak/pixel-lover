@@ -744,19 +744,19 @@ public class UIManager : MonoBehaviour
         var bl = new Vector2(0f, 0f);
         var br = new Vector2(1f, 0f);
 
-        var left = MakeHold(safe, "<", 10, bl, new Vector2(24f, 24f), new Vector2(165f, 165f));
+        var left = MakeHold(safe, "<", 7, bl, new Vector2(24f, 20f), new Vector2(112f, 112f));
         left.onDown = () => TouchInput.Left = true;
         left.onUp = () => TouchInput.Left = false;
 
-        var right = MakeHold(safe, ">", 10, bl, new Vector2(210f, 24f), new Vector2(165f, 165f));
+        var right = MakeHold(safe, ">", 7, bl, new Vector2(150f, 20f), new Vector2(112f, 112f));
         right.onDown = () => TouchInput.Right = true;
         right.onUp = () => TouchInput.Right = false;
 
-        var jump = MakeHold(safe, "JUMP", 5, br, new Vector2(-24f, 24f), new Vector2(215f, 215f));
+        var jump = MakeHold(safe, "JUMP", 4, br, new Vector2(-24f, 20f), new Vector2(140f, 140f));
         jump.onDown = TouchInput.PressJump;
         jump.onUp = TouchInput.ReleaseJump;
 
-        var fire = MakeHold(safe, "FIRE", 4, br, new Vector2(-265f, 30f), new Vector2(150f, 150f));
+        var fire = MakeHold(safe, "FIRE", 3, br, new Vector2(-180f, 24f), new Vector2(104f, 104f));
         fire.idleColor = new Color(1f, 0.55f, 0.25f, 0.6f);
         fire.activeColor = new Color(1f, 0.7f, 0.4f, 0.95f);
         fire.image.color = fire.idleColor;

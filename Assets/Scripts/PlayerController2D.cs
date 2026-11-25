@@ -401,6 +401,43 @@ public class PlayerController2D : MonoBehaviour
         rb.SetVel(new Vector2(0f, v.y));
     }
 
+    /// <summary>Mario-style: grab the pole and slide down it, then stand on the ground next to it.</summary>
+    public IEnumerator SlideDownPole(float poleX, float groundY, System.Action<float> onHeight)
+    {
+        ControlEnabled = false;
+        Invincible = true;
+        externalMove = 0f;
+        rb.SetVel(Vector2.zero);
+        rb.simulated = false;
+        facing = 1;
+        visual.flipX = false;
+        visual.sprite = idle;
+        IsGrounded = true;
+
+        Vector3 p = transform.position;
+        float startY = Mathf.Clamp(p.y, groundY, groundY + 4.2f);
+        float x = poleX - 0.45f;
+        // snap onto the pole
+        for (float t = 0f; t < 0.15f; t += Time.deltaTime)
+        {
+            transform.position = new Vector3(Mathf.Lerp(p.x, x, t / 0.15f), Mathf.Lerp(p.y, startY, t / 0.15f), p.z);
+            yield return null;
+        }
+        float dur = Mathf.Max(0.35f, (startY - groundY) / 5f);
+        for (float t = 0f; t < dur; t += Time.deltaTime)
+        {
+            float k = t / dur;
+            transform.position = new Vector3(x, Mathf.Lerp(startY, groundY, k), p.z);
+            if (onHeight != null) onHeight(k);
+            yield return null;
+        }
+        transform.position = new Vector3(x, groundY, p.z);
+        if (onHeight != null) onHeight(1f);
+        yield return new WaitForSeconds(0.25f);
+        rb.simulated = true;
+        rb.SetVel(Vector2.zero);
+    }
+
     public void Face(int dir) { facing = dir >= 0 ? 1 : -1; visual.flipX = facing < 0; }
 
     /// <summary>Boy at the end of level 10: stop and sit down next to the flag.</summary>

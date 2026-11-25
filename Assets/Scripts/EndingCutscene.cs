@@ -7,7 +7,7 @@ using UnityEngine;
 /// waiting knight:
 ///   she walks to him -> he takes off... stands up (helmet off) and hops -> steps toward her ->
 ///   KNEELS ON ONE KNEE and holds out an open ring box with the ring he bought ->
-///   "WILL YOU MARRY ME, NAME?" -> she hops and says YES -> the ring flies to her, hearts burst ->
+///   "HAPPY BIRTHDAY LOVE!" -> she hops and says THANK YOU -> the ring flies to her, hearts burst ->
 ///   they step together, lean in for the kiss, big heart -> "TOGETHER FOREVER" with both names.
 /// Added to the LevelManager object automatically. Everything is sprite + coroutine based.
 /// </summary>
@@ -83,13 +83,13 @@ public class EndingCutscene : MonoBehaviour
 
         // 4) The question
         GameObject ask = Bubble(boy.transform.position + new Vector3(-0.8f, 2.6f, 0f),
-                                "WILL YOU MARRY ME, " + girlName.ToUpperInvariant() + "?");
+                                "HAPPY BIRTHDAY LOVE!");
         yield return new WaitForSeconds(2.8f);
         DestroyBubble(ask);
 
         // 5) She says yes
         Vector3 girlHead = girl.transform.position + new Vector3(0f, 2.4f * girlScale, 0f);
-        GameObject yes = Bubble(girlHead + new Vector3(0f, 0.4f, 0f), "YES!");
+        GameObject yes = Bubble(girlHead + new Vector3(0f, 0.4f, 0f), "THANK YOU!");
         yield return Hop(girl.transform, 0.45f, 0.3f);
         Hearts(girl.transform.position + new Vector3(0f, 1.2f, 0f), 8);
         yield return Hop(girl.transform, 0.35f, 0.25f);
